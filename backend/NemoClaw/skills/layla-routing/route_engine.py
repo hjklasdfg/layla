@@ -16,7 +16,9 @@ from __future__ import annotations
 import json, os, math, heapq
 from collections import defaultdict
 
-DATA_DIR = os.path.dirname(os.path.abspath(__file__))
+# Data lives in the sibling layla-data skill (override with LAYLA_DATA_DIR).
+DATA_DIR = os.environ.get("LAYLA_DATA_DIR") or os.path.normpath(
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "layla-data"))
 
 # --- Persona = a weight profile over the layers. cost = length * (1 + Σ w·score) ---
 PERSONAS = {

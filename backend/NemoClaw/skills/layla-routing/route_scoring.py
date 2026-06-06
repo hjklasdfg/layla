@@ -18,11 +18,15 @@ crossing penalties — extended with our fused layers (crime, noise, lighting).
 """
 from __future__ import annotations
 import os, sys, collections, pickle
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+_HERE = os.path.dirname(os.path.abspath(__file__))
+# data tools + files live in the sibling layla-data skill
+_DATA = os.environ.get("LAYLA_DATA_DIR") or os.path.normpath(os.path.join(_HERE, "..", "layla-data"))
+sys.path.insert(0, _HERE)        # route_engine (this dir)
+sys.path.insert(0, _DATA)        # layla_data_skill (data skill)
 import route_engine as RE
 import layla_data_skill as data
 
-DIR = os.path.dirname(os.path.abspath(__file__))
+DIR = _HERE
 _CACHE_FILE = os.path.join(DIR, "_graph_cache.pkl")
 
 WALK = RE.WALK_SPEED_MPS
@@ -82,7 +86,7 @@ def _graph():
     global _GRAPH
     if _GRAPH is not None:
         return _GRAPH
-    foot = os.path.join(DIR, "layla_osm_footways.geojson")
+    foot = os.path.join(_DATA, "layla_osm_footways.geojson")
     if os.path.exists(_CACHE_FILE) and os.path.getmtime(_CACHE_FILE) >= os.path.getmtime(foot):
         try:
             _GRAPH = pickle.load(open(_CACHE_FILE, "rb"))
