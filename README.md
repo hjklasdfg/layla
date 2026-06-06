@@ -22,6 +22,7 @@ flowchart TB
     APIS["🔌 Next.js API Routes<br/>/api/mobility · /api/camera · /api/voice"]:::app
     TFL["🚇 TfL Unified API<br/>Journey Planner"]:::external
     EL["🎙️ ElevenLabs<br/>Scribe STT · TTS"]:::external
+    NEB["☁️ Nebius AI<br/>Hazard vision + civic email agent"]:::external
     NEM["🧠 Nemotron-3-Nano-Omni-30B<br/>Mobility Planning · Reasoning"]:::model
     VLLM["⚙️ vLLM Server<br/>localhost:18000"]:::runtime
     CADDY["🔀 Caddy Proxy<br/>:80 · :8081 · :3002"]:::runtime
@@ -35,6 +36,7 @@ flowchart TB
     FE --> APIS
     APIS -->|Journey candidates| TFL
     APIS -->|STT / TTS| EL
+    APIS -->|Hazard photo analysis + email agent| NEB
     APIS -->|Route reasoning| VLLM
     VLLM --> NEM
     NEM --> DGX
