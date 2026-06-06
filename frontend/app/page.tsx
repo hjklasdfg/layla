@@ -138,6 +138,11 @@ export default function Home() {
   const [crimeLayerVisible, setCrimeLayerVisible] = useState(false);
   const [crimeLoading, setCrimeLoading] = useState(false);
   const [crimeError, setCrimeError] = useState<string | null>(null);
+  const [journeyMarkers, setJourneyMarkers] = useState<{
+    start?: { lat: number; lng: number; name: string };
+    end?: { lat: number; lng: number; name: string };
+  }>({});
+  const [mapRevision, setMapRevision] = useState("initial");
   const { location: gpsLocation } = useGeolocation(true);
   const voiceRef = useRef<VoicePanelHandle>(null);
   const cameraRef = useRef<CameraPanelHandle>(null);
@@ -166,6 +171,8 @@ export default function Home() {
     setRecommendation(null);
     setRouteExplanation(null);
     setLlmInput(null);
+    setJourneyMarkers({});
+    setMapRevision(`pending-${Date.now()}`);
     clearRecommendationUpdated();
     clearError();
 
@@ -227,6 +234,13 @@ export default function Home() {
 
       setStart(result.journey.start);
       setDestination(result.journey.destination);
+      setJourneyMarkers({
+        start: result.meta.startPoint,
+        end: result.meta.endPoint,
+      });
+      setMapRevision(
+        `${result.journey.start}-${result.journey.destination}-${result.recommendation.recommendedRouteId}-${Date.now()}`
+      );
       setSelectedRouteId(result.recommendation.recommendedRouteId);
       setRecommendation(result.recommendation);
       setRouteExplanation(result.explanation);
@@ -631,8 +645,11 @@ export default function Home() {
                 routes={mobilityRoutes}
                 selectedRouteId={highlightedRouteId}
                 onRouteSelect={setSelectedRouteId}
-                startLabel={start || "Start"}
-                endLabel={destination || "Destination"}
+                startLabel={start || journeyMarkers.start?.name || "Start"}
+                endLabel={destination || journeyMarkers.end?.name || "Destination"}
+                startPoint={journeyMarkers.start ?? null}
+                endPoint={journeyMarkers.end ?? null}
+                mapRevision={mapRevision}
                 highContrast={highContrastMap}
                 crimeIncidents={crimeLayerVisible ? crimeIncidents : []}
                 crimeMeta={crimeLayerVisible ? crimeMeta : null}

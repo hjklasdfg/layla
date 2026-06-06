@@ -6,11 +6,11 @@ import { serverEnv } from "@/lib/config/env";
 export const maxDuration = 120;
 
 export async function POST(request: Request) {
-  if (!serverEnv.gemini.enabled) {
+  if (!serverEnv.nebiusai.enabled) {
     return NextResponse.json(
       {
         error:
-          "GEMINI_API_KEY missing. Add it to .env.local for hazard photo analysis.",
+          "NEBUISAI_API_KEY missing. Add it to .env.local for hazard reports.",
       },
       { status: 503 }
     );
@@ -28,7 +28,11 @@ export async function POST(request: Request) {
     }
 
     const result = await analyzeHazardAndReport(body);
-    return NextResponse.json(result);
+    return NextResponse.json({
+      ...result,
+      emailSent: false,
+      emailStatus: "Draft ready — use Send in the hazard report dialog.",
+    });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Hazard report failed";
     return NextResponse.json({ error: message }, { status: 500 });

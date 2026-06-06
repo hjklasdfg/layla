@@ -69,9 +69,32 @@ export interface RouteMapProps {
   onRouteSelect?: (routeId: string) => void;
   startLabel?: string;
   endLabel?: string;
+  startPoint?: { lat: number; lng: number; name?: string } | null;
+  endPoint?: { lat: number; lng: number; name?: string } | null;
+  /** Changes when journey/routes change — forces Leaflet to remount cleanly. */
+  mapRevision?: string;
   highContrast?: boolean;
   crimeIncidents?: CrimeIncident[];
   crimeMeta?: CrimeIncidentMeta | null;
+}
+
+function endpointsForRoute(route: MobilityRouteState | undefined): {
+  start: { lat: number; lng: number } | null;
+  end: { lat: number; lng: number } | null;
+} {
+  if (!route) return { start: null, end: null };
+
+  const coords = route.geometry.coordinates;
+  if (coords.length >= 2) {
+    const first = coords[0]!;
+    const last = coords[coords.length - 1]!;
+    return {
+      start: { lat: first[0], lng: first[1] },
+      end: { lat: last[0], lng: last[1] },
+    };
+  }
+
+  return { start: route.start ?? null, end: route.end ?? null };
 }
 
 function LayerToggle({
@@ -184,6 +207,9 @@ export function RouteMap({
   onRouteSelect,
   startLabel = "Start",
   endLabel = "Destination",
+  startPoint: startPointProp,
+  endPoint: endPointProp,
+  mapRevision = "default",
   highContrast: highContrastProp = false,
   crimeIncidents = [],
   crimeMeta = null,
@@ -191,8 +217,21 @@ export function RouteMap({
   const [layers, setLayers] = useState<MapLayerVisibility>(DEFAULT_LAYERS);
   const highContrast = highContrastProp;
 
-  const start = routes[0]?.start;
-  const end = routes[0]?.end;
+  const activeRoute = useMemo(() => {
+    if (!routes.length) return undefined;
+    if (selectedRouteId) {
+      return routes.find((route) => route.id === selectedRouteId) ?? routes[0];
+    }
+    return routes[0];
+  }, [routes, selectedRouteId]);
+
+  const routeEndpoints = useMemo(
+    () => endpointsForRoute(activeRoute),
+    [activeRoute]
+  );
+
+  const start = startPointProp ?? routeEndpoints.start;
+  const end = endPointProp ?? routeEndpoints.end;
   const crimeLocations = useMemo(() => {
     const grouped = new Map<string, CrimeLocation>();
 
@@ -223,15 +262,19 @@ export function RouteMap({
   const hasCrimeLayer = crimeLocations.length > 0;
 
   const bounds = useMemo((): L.LatLngBoundsExpression | null => {
-    const routeCoords = routes.flatMap((r) => r.geometry.coordinates);
+    const routeCoords =
+      activeRoute?.geometry.coordinates ?? routes[0]?.geometry.coordinates ?? [];
+    const markerCoords: [number, number][] = [];
+    if (start) markerCoords.push([start.lat, start.lng]);
+    if (end) markerCoords.push([end.lat, end.lng]);
     const crimeCoords = crimeLocations.map(
       (incident) => [incident.latitude, incident.longitude] as [number, number]
     );
-    const allCoords = [...routeCoords, ...crimeCoords];
+    const allCoords = [...routeCoords, ...markerCoords, ...crimeCoords];
 
     if (allCoords.length === 0) return null;
     return L.latLngBounds(allCoords);
-  }, [crimeLocations, routes]);
+  }, [activeRoute, crimeLocations, end, routes.length, start]);
 
   const mapCenter = useMemo((): [number, number] => {
     if (start) return [start.lat, start.lng];
@@ -310,6 +353,7 @@ export function RouteMap({
       </div>
 
       <MapContainer
+        key={mapRevision}
         center={mapCenter}
         zoom={14}
         className="h-[360px] w-full sm:h-[420px]"
@@ -347,7 +391,7 @@ export function RouteMap({
             const color = ROUTE_COLORS[route.id] ?? "#94a3b8";
             return (
               <Polyline
-                key={route.id}
+                key={`${mapRevision}-${route.id}`}
                 positions={route.geometry.coordinates}
                 pathOptions={{
                   color,
@@ -368,6 +412,7 @@ export function RouteMap({
           })}
 
         <AccessibilityLayer
+          key={`${mapRevision}-a11y`}
           routes={routes}
           layers={layers}
           highContrast={highContrast}

@@ -1,6 +1,9 @@
 import { serverEnv, tflQueryParams } from "@/lib/config/env";
 import { parseJourneySteps } from "./journeySteps";
-import { resolveJourneyLocation } from "./resolveLocation";
+import {
+  pickBestDisambiguationOption,
+  resolveJourneyLocation,
+} from "./resolveLocation";
 import type {
   RouteCandidate,
   TfLDisambiguation,
@@ -108,9 +111,11 @@ function normalizeJourney(journey: TfLRawJourney, index: number): RouteCandidate
 }
 
 function pickDisambiguationOption(
-  disambiguation?: TfLDisambiguation
+  disambiguation: TfLDisambiguation | undefined,
+  userQuery: string
 ): string | null {
-  const option = disambiguation?.disambiguationOptions?.[0];
+  const options = disambiguation?.disambiguationOptions ?? [];
+  const option = pickBestDisambiguationOption(userQuery, options);
   if (!option) return null;
   return optionToJourneySegment(option);
 }
@@ -181,15 +186,19 @@ async function fetchJourneyResults(
 /** Fetch live journey options between two locations. */
 export async function getJourneys(
   from: string,
-  to: string
+  to: string,
+  options?: {
+    fromSegment?: string;
+    toSegment?: string;
+  }
 ): Promise<RouteCandidate[]> {
-  const fromSegment = await resolveJourneyLocation(from);
-  const toSegment = await resolveJourneyLocation(to);
+  const fromSegment = options?.fromSegment ?? (await resolveJourneyLocation(from));
+  const toSegment = options?.toSegment ?? (await resolveJourneyLocation(to));
 
   let data = await fetchJourneyResults(fromSegment, toSegment);
 
-  const fromAlt = pickDisambiguationOption(data.fromLocationDisambiguation);
-  const toAlt = pickDisambiguationOption(data.toLocationDisambiguation);
+  const fromAlt = pickDisambiguationOption(data.fromLocationDisambiguation, from);
+  const toAlt = pickDisambiguationOption(data.toLocationDisambiguation, to);
 
   if (fromAlt || toAlt) {
     data = await fetchJourneyResults(

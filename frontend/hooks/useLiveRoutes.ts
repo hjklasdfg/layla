@@ -21,6 +21,8 @@ export interface RoutesMeta {
   count: number;
   profile?: UserPreference["profile"];
   osmWarning?: string;
+  startPoint?: import("@/lib/mobility/backend-plan-types").JourneyMapPoint;
+  endPoint?: import("@/lib/mobility/backend-plan-types").JourneyMapPoint;
   llmInput?: LlmPlanInput;
   /** @deprecated use llmInput */
   geminiInput?: LlmPlanInput;
@@ -100,6 +102,9 @@ export function useLiveRoutes() {
       setIsSearching(true);
       setFetchError(null);
       setCanRetry(false);
+      setMobilityRoutes([]);
+      setRoutes([]);
+      setRoutesMeta(null);
 
       try {
         const result = applyPlanResult(await planMobilityJourney(request));

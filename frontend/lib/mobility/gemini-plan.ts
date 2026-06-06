@@ -65,14 +65,14 @@ export async function requestGeminiMobilityPlan(
     throw new Error("GEMINI_API_KEY not configured");
   }
 
-  const { journey, preference, tflJourney } = request;
+  const { journey, preference, tflJourney, journeyAnchors } = request;
   const slimRequest = slimMobilityPlanRequestForGemini(request);
   const llmInput = buildLlmPlanInput(slimRequest, serverEnv.gemini.model);
 
   // LLM (slim payload) and OSM enrichment run in parallel — no 30s serial wait.
   const [parsed, enrichment] = await Promise.all([
     callGeminiPlan(llmInput),
-    buildMobilityRoutesFromCandidates(tflJourney.candidates, preference.profile),
+    buildMobilityRoutesFromCandidates(tflJourney.candidates, preference.profile, journeyAnchors),
   ]);
 
   const { routes: mobilityRoutes, osmWarning } = enrichment;

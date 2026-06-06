@@ -46,10 +46,11 @@ function buildLocalExplanation(
 async function buildLocalPlanFallback(
   request: BackendMobilityPlanRequest
 ): Promise<BackendMobilityPlanResponse> {
-  const { journey, preference, tflJourney } = request;
+  const { journey, preference, tflJourney, journeyAnchors } = request;
   const { routes: mobilityRoutes, osmWarning } = await buildMobilityRoutesFromCandidates(
     tflJourney.candidates,
-    preference.profile
+    preference.profile,
+    journeyAnchors
   );
 
   if (!mobilityRoutes.length) {

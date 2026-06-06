@@ -10,6 +10,11 @@ import { getJourneys } from "@/services/tfl/journey";
 import { summarizeJourneySteps } from "@/services/tfl/journeySteps";
 import { normalizeTfLData } from "@/services/tfl/normalize";
 import type { JourneyStep, RouteCandidate, TfLJourneyLeg, TfLRawJourney } from "@/services/tfl/types";
+import type { JourneyAnchorPoints } from "@/lib/mobility/backend-plan-types";
+import type { ResolvedLocationPoint } from "@/services/tfl/resolveLocation";
+import { haversineKm } from "@/lib/geo/haversine";
+
+export type { JourneyAnchorPoints };
 
 export interface MobilityRouteState {
   id: string;
@@ -31,6 +36,86 @@ export interface MobilityRouteState {
   osmContext: OSMEnrichedContext | null;
   additionalWaitMin?: number;
   plannedEtaMin?: number;
+}
+
+function anchorGeometryToJourney(
+  coords: [number, number][],
+  start: { lat: number; lng: number },
+  end: { lat: number; lng: number }
+): [number, number][] {
+  if (coords.length < 2) {
+    return [
+      [start.lat, start.lng],
+      [end.lat, end.lng],
+    ];
+  }
+
+  const anchored = coords.map((coord) => [...coord] as [number, number]);
+  anchored[0] = [start.lat, start.lng];
+  anchored[anchored.length - 1] = [end.lat, end.lng];
+  return anchored;
+}
+
+function routeMatchesJourneyAnchors(
+  route: MobilityRouteState,
+  anchors: JourneyAnchorPoints
+): boolean {
+  const { start, end, maxEndpointDriftKm = 12 } = anchors;
+  if (!start || !end) return true;
+
+  const coords = route.geometry.coordinates;
+  if (coords.length < 2) return false;
+
+  const geomStart = coords[0]!;
+  const geomEnd = coords[coords.length - 1]!;
+
+  const startDrift = haversineKm(geomStart[0], geomStart[1], start.lat, start.lng);
+  const endDrift = haversineKm(geomEnd[0], geomEnd[1], end.lat, end.lng);
+
+  return startDrift <= maxEndpointDriftKm && endDrift <= maxEndpointDriftKm;
+}
+
+function buildFallbackRoute(
+  candidate: RouteCandidate,
+  start: ResolvedLocationPoint,
+  end: ResolvedLocationPoint
+): MobilityRouteState {
+  const geometryCoords: [number, number][] = [
+    [start.lat, start.lng],
+    [end.lat, end.lng],
+  ];
+  const signals: AccessibilitySignals = {
+    accessibility: 70,
+    stress: 40,
+    reliability: 75,
+    predictability: 72,
+    crowding: 35,
+    crossingComplexity: 30,
+  };
+
+  return {
+    id: candidate.id,
+    name: summarizeJourneySteps(candidate.steps) || `Route ${candidate.id}`,
+    etaMin: candidate.etaMin,
+    geometry: { coordinates: geometryCoords },
+    start: { lat: start.lat, lng: start.lng },
+    end: { lat: end.lat, lng: end.lng },
+    signals,
+    evidence: {
+      tfl: candidate.instructions.slice(0, 4),
+      osm: ["Map path approximated — TfL geometry did not match journey endpoints"],
+      cv: [],
+    },
+    risks: candidate.disruptions.length ? candidate.disruptions.slice(0, 2) : ["Approximate map path"],
+    strengths: ["Journey timing from TfL"],
+    steps: candidate.steps,
+    transferCount: candidate.transferCount,
+    walkingMinutes: candidate.walkingMinutes,
+    disruptions: candidate.disruptions,
+    modes: candidate.modes,
+    riskyFeatures: [],
+    osmContext: null,
+  };
 }
 
 function clamp(value: number): number {
@@ -231,7 +316,8 @@ function buildRisksAndStrengths(
 async function enrichCandidate(
   candidate: RouteCandidate,
   profile: UserPreference["profile"],
-  osmWarningRef: { value?: string }
+  osmWarningRef: { value?: string },
+  anchors?: JourneyAnchorPoints
 ): Promise<MobilityRouteState | null> {
   const { start, end } = endpointFromLegs(candidate.rawJourney.legs ?? []);
   let geometryCoords = extractJourneyGeometry(candidate.rawJourney);
@@ -245,6 +331,45 @@ async function enrichCandidate(
 
   if (!start || !end || geometryCoords.length < 2) {
     return null;
+  }
+
+  const rawRoute: MobilityRouteState = {
+    id: candidate.id,
+    name: summarizeJourneySteps(candidate.steps) || `Route ${candidate.id}`,
+    etaMin: candidate.etaMin,
+    geometry: { coordinates: geometryCoords },
+    start,
+    end,
+    signals: {
+      accessibility: 0,
+      stress: 0,
+      reliability: 0,
+      predictability: 0,
+      crowding: 0,
+      crossingComplexity: 0,
+    },
+    evidence: { tfl: [], osm: [], cv: [] },
+    risks: [],
+    strengths: [],
+    steps: candidate.steps,
+    transferCount: candidate.transferCount,
+    walkingMinutes: candidate.walkingMinutes,
+    disruptions: candidate.disruptions,
+    modes: candidate.modes,
+    riskyFeatures: [],
+    osmContext: null,
+  };
+
+  if (anchors?.start && anchors?.end && !routeMatchesJourneyAnchors(rawRoute, anchors)) {
+    return null;
+  }
+
+  let routeStart = start;
+  let routeEnd = end;
+  if (anchors?.start && anchors?.end) {
+    geometryCoords = anchorGeometryToJourney(geometryCoords, anchors.start, anchors.end);
+    routeStart = { lat: anchors.start.lat, lng: anchors.start.lng };
+    routeEnd = { lat: anchors.end.lat, lng: anchors.end.lng };
   }
 
   let osmContext: OSMEnrichedContext | null = null;
@@ -285,8 +410,8 @@ async function enrichCandidate(
     name: summarizeJourneySteps(candidate.steps) || `Route ${candidate.id}`,
     etaMin: candidate.etaMin,
     geometry: { coordinates: geometryCoords },
-    start,
-    end,
+    start: routeStart,
+    end: routeEnd,
     signals,
     evidence,
     risks,
@@ -304,14 +429,24 @@ async function enrichCandidate(
 /** Enrich pre-fetched TfL candidates with OSM accessibility context. */
 export async function buildMobilityRoutesFromCandidates(
   candidates: RouteCandidate[],
-  profile: UserPreference["profile"] = "general"
+  profile: UserPreference["profile"] = "general",
+  anchors?: JourneyAnchorPoints
 ): Promise<{ routes: MobilityRouteState[]; osmWarning?: string }> {
   const osmWarningRef: { value?: string } = {};
   const routes: MobilityRouteState[] = [];
 
   for (const candidate of candidates) {
-    const enriched = await enrichCandidate(candidate, profile, osmWarningRef);
+    const enriched = await enrichCandidate(candidate, profile, osmWarningRef, anchors);
     if (enriched) routes.push(enriched);
+  }
+
+  if (!routes.length && anchors?.start && anchors?.end && candidates.length > 0) {
+    osmWarningRef.value =
+      osmWarningRef.value ??
+      "TfL map paths did not match your journey locations — showing direct paths between start and end.";
+    for (const candidate of candidates.slice(0, 3)) {
+      routes.push(buildFallbackRoute(candidate, anchors.start, anchors.end));
+    }
   }
 
   return { routes, osmWarning: osmWarningRef.value };
