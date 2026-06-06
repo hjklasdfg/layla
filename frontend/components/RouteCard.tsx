@@ -158,41 +158,51 @@ export function RouteCard({
         <p className="mb-2 text-[10px] font-semibold uppercase tracking-widest text-cyan-500/80">
           Accessibility State Engine
         </p>
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-          <AnimatedScoreMetric
-            label="Accessibility"
-            value={signals.accessibility}
-            previousValue={prevSignals?.accessibility}
-          />
-          <AnimatedScoreMetric
-            label="Stress"
-            value={signals.stress}
-            previousValue={prevSignals?.stress}
-            invert
-          />
-          <AnimatedScoreMetric
-            label="Reliability"
-            value={signals.reliability}
-            previousValue={prevSignals?.reliability}
-          />
-          <AnimatedScoreMetric
-            label="Predictability"
-            value={signals.predictability}
-            previousValue={prevSignals?.predictability}
-          />
-          <AnimatedScoreMetric
-            label="Crowding"
-            value={signals.crowding}
-            previousValue={prevSignals?.crowding}
-            invert
-          />
-          <AnimatedScoreMetric
-            label="Crossing Complexity"
-            value={signals.crossingComplexity}
-            previousValue={prevSignals?.crossingComplexity}
-            invert
-          />
-        </div>
+        {route.signals5 ? (
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+            <AnimatedScoreMetric label="Accessibility" value={route.signals5.accessibility} />
+            <AnimatedScoreMetric label="Safety" value={route.signals5.safety} />
+            <AnimatedScoreMetric label="Quiet" value={route.signals5.quiet} />
+            <AnimatedScoreMetric label="Lighting" value={route.signals5.lighting} />
+            <AnimatedScoreMetric label="Air" value={route.signals5.air} />
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+            <AnimatedScoreMetric
+              label="Accessibility"
+              value={signals.accessibility}
+              previousValue={prevSignals?.accessibility}
+            />
+            <AnimatedScoreMetric
+              label="Stress"
+              value={signals.stress}
+              previousValue={prevSignals?.stress}
+              invert
+            />
+            <AnimatedScoreMetric
+              label="Reliability"
+              value={signals.reliability}
+              previousValue={prevSignals?.reliability}
+            />
+            <AnimatedScoreMetric
+              label="Predictability"
+              value={signals.predictability}
+              previousValue={prevSignals?.predictability}
+            />
+            <AnimatedScoreMetric
+              label="Crowding"
+              value={signals.crowding}
+              previousValue={prevSignals?.crowding}
+              invert
+            />
+            <AnimatedScoreMetric
+              label="Crossing Complexity"
+              value={signals.crossingComplexity}
+              previousValue={prevSignals?.crossingComplexity}
+              invert
+            />
+          </div>
+        )}
       </div>
 
       <div className="grid flex-1 grid-cols-1 gap-4 sm:grid-cols-2">

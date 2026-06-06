@@ -61,7 +61,8 @@ def _state(r):
 
 def _enriched(st):
     return {"routeId": st["id"], "name": st["name"], "etaMin": st["etaMin"],
-            "signals": st["signals"], "evidence": st["evidence"],
+            "signals": st["signals"], "signals5": st.get("signals5"),
+            "evidence": st["evidence"],
             "risks": st["risks"], "strengths": st["strengths"],
             "transferCount": 0, "walkingMinutes": st["walkingMinutes"]}
 
