@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useConversation, useConversationClientTool } from "@elevenlabs/react";
 
 /**
@@ -34,9 +34,41 @@ function dispatchMapCommand(cmd: VoiceMapCommand, onMapCommand?: (c: VoiceMapCom
   }
 }
 
+// Browsers create AudioContexts in a "suspended" state and only allow audio
+// playback after a user gesture. The ElevenLabs SDK builds its output
+// AudioContext inside startSession() and tries to resume it itself — but if any
+// `await` runs between the click and startSession() (e.g. fetching a signed
+// URL), the user activation is consumed and the resume is rejected on strict
+// engines (iOS Safari especially). The result: the agent's reply audio arrives
+// over the WebSocket but is never played. Resuming a context synchronously on
+// the click marks the document as user-activated for audio so the SDK's own
+// resume() succeeds. Best-effort — failures are non-fatal.
+let sharedPlaybackCtx: AudioContext | null = null;
+function unlockAudioPlayback() {
+  if (typeof window === "undefined") return;
+  try {
+    const Ctx =
+      window.AudioContext ??
+      (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+    if (!Ctx) return;
+    if (!sharedPlaybackCtx) sharedPlaybackCtx = new Ctx();
+    if (sharedPlaybackCtx.state === "suspended") void sharedPlaybackCtx.resume();
+    // A 1-sample silent buffer satisfies stricter autoplay engines.
+    const source = sharedPlaybackCtx.createBufferSource();
+    source.buffer = sharedPlaybackCtx.createBuffer(1, 1, 22050);
+    source.connect(sharedPlaybackCtx.destination);
+    source.start(0);
+  } catch {
+    /* best-effort; the SDK still attempts its own resume */
+  }
+}
+
 export function VoiceConversationPanel({ onMapCommand }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [lastUtterance, setLastUtterance] = useState<string>("");
+  // Cached signed URL so startSession() can run synchronously inside the click
+  // gesture (no `await fetch` in the start path — see unlockAudioPlayback).
+  const signedUrlRef = useRef<string | null>(null);
 
   const conversation = useConversation({
     onConnect: () => setError(null),
@@ -45,6 +77,23 @@ export function VoiceConversationPanel({ onMapCommand }: Props) {
       if (source === "user") setLastUtterance(message);
     },
   });
+
+  // Pre-mint the signed URL ahead of the click. The agent is private, so we
+  // start from a server-minted signed URL when available; null means fall back
+  // to the provider's default agent id (public agent).
+  const refreshSignedUrl = useCallback(async () => {
+    try {
+      const res = await fetch("/api/voice/session");
+      const data = (await res.json()) as { signedUrl?: string | null };
+      signedUrlRef.current = data.signedUrl ?? null;
+    } catch {
+      signedUrlRef.current = null;
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshSignedUrl();
+  }, [refreshSignedUrl]);
 
   // Map tools — names MUST match the client tools configured on the ElevenLabs
   // agent. Handlers receive untyped params (Record<string, unknown>); we read
@@ -79,28 +128,27 @@ export function VoiceConversationPanel({ onMapCommand }: Props) {
   const status = conversation.status; // "disconnected" | "connecting" | "connected"
   const active = status === "connected" || status === "connecting";
 
-  const toggle = useCallback(async () => {
+  const toggle = useCallback(() => {
+    if (active) {
+      void conversation.endSession();
+      void refreshSignedUrl(); // re-arm for the next session
+      return;
+    }
+    setError(null);
+    // Everything below must stay synchronous within the click gesture so the
+    // SDK's output AudioContext is created+resumed while the page is still
+    // user-activated — otherwise the agent's audio is received but never plays.
     try {
-      if (active) {
-        await conversation.endSession();
-        return;
-      }
-      setError(null);
-      // The agent is private (auth enabled), so start from a server-minted
-      // signed URL rather than a bare agentId.
-      const res = await fetch("/api/voice/session");
-      const data = (await res.json()) as { signedUrl?: string | null; error?: string };
-      if (data.signedUrl) {
-        await conversation.startSession({ signedUrl: data.signedUrl });
-      } else {
-        // Fall back to agentId (works only if the agent is public).
-        await conversation.startSession();
-      }
+      unlockAudioPlayback();
+      const url = signedUrlRef.current;
+      // startSession() from the react hook returns void and runs the async
+      // setup (mic, audio context) internally; SDK errors surface via onError.
+      conversation.startSession(url ? { signedUrl: url } : undefined);
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Could not start voice";
       setError(msg.toLowerCase().includes("permission") ? "Microphone access needed." : msg);
     }
-  }, [active, conversation]);
+  }, [active, conversation, refreshSignedUrl]);
 
   const label = error
     ? "Tap to retry"
