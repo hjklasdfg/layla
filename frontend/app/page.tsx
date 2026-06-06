@@ -136,6 +136,17 @@ export default function Home() {
   const [personaRoutes, setPersonaRoutes] = useState<MobilityRouteState[]>([]);
   const [compareLoading, setCompareLoading] = useState(false);
   const [compareError, setCompareError] = useState<string | null>(null);
+  const [compareDim, setCompareDim] = useState<"profile" | "preference">("profile");
+  const [cmpProfiles, setCmpProfiles] = useState<UserPreference["profile"][]>([
+    "general",
+    "blind",
+    "wheelchair",
+  ]);
+  const [cmpPrefs, setCmpPrefs] = useState<UserPreference["priority"][]>([
+    "most_accessible",
+    "fastest",
+    "most_reliable",
+  ]);
   const [highContrastMap, setHighContrastMap] = useState(false);
   const [crimeIncidents, setCrimeIncidents] = useState<CrimeIncident[]>([]);
   const [crimeMeta, setCrimeMeta] = useState<CrimeIncidentMeta | null>(null);
@@ -272,6 +283,14 @@ export default function Home() {
 
   async function handleComparePersonas() {
     if (!start.trim() || !destination.trim()) return;
+    const combos =
+      compareDim === "profile"
+        ? cmpProfiles.map((p) => ({ profile: p, priority }))
+        : cmpPrefs.map((pr) => ({ profile, priority: pr }));
+    if (!combos.length) {
+      setCompareError("Pick at least one option to compare.");
+      return;
+    }
     setCompareLoading(true);
     setCompareError(null);
     try {
@@ -280,6 +299,7 @@ export default function Home() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           journey: { start: start.trim(), destination: destination.trim() },
+          combos,
         }),
       });
       const data = await res.json();
@@ -554,17 +574,105 @@ export default function Home() {
                       ? "Analysing…"
                       : "Compare Routes"}
                 </button>
-                <button
-                  type="button"
-                  onClick={handleComparePersonas}
-                  disabled={!start.trim() || !destination.trim() || compareLoading}
-                  className="w-full rounded-lg border border-cyan-500/40 py-2.5 text-sm font-semibold text-cyan-300 transition hover:bg-cyan-500/10 disabled:cursor-not-allowed disabled:opacity-40"
-                >
-                  {compareLoading ? "Comparing personas…" : "Compare personas"}
-                </button>
-                {compareError && (
-                  <p className="text-[11px] text-red-300">{compareError}</p>
-                )}
+                <div className="space-y-2 rounded-lg border border-cyan-500/30 bg-slate-900/40 p-3">
+                  <p className="text-[11px] font-semibold uppercase tracking-wider text-cyan-300">
+                    Compare on map
+                  </p>
+                  <div className="flex gap-1 rounded-md bg-slate-800/60 p-0.5 text-xs">
+                    <button
+                      type="button"
+                      onClick={() => setCompareDim("profile")}
+                      className={`flex-1 rounded px-2 py-1 transition ${
+                        compareDim === "profile"
+                          ? "bg-cyan-500 font-semibold text-slate-950"
+                          : "text-slate-300 hover:text-slate-100"
+                      }`}
+                    >
+                      By profile
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setCompareDim("preference")}
+                      className={`flex-1 rounded px-2 py-1 transition ${
+                        compareDim === "preference"
+                          ? "bg-cyan-500 font-semibold text-slate-950"
+                          : "text-slate-300 hover:text-slate-100"
+                      }`}
+                    >
+                      By preference
+                    </button>
+                  </div>
+                  <p className="text-[10px] text-slate-500">
+                    {compareDim === "profile"
+                      ? `Preference fixed: ${
+                          PREFERENCES.find((p) => p.value === priority)?.label ?? priority
+                        }`
+                      : `Profile fixed: ${
+                          USER_PROFILES.find((p) => p.value === profile)?.label ?? profile
+                        }`}
+                  </p>
+                  <div className="grid grid-cols-2 gap-x-3 gap-y-1.5">
+                    {compareDim === "profile"
+                      ? USER_PROFILES.filter((o) => o.value !== "custom").map((opt) => (
+                          <label
+                            key={opt.value}
+                            className="flex items-center gap-1.5 text-xs text-slate-300"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={cmpProfiles.includes(opt.value)}
+                              onChange={(e) =>
+                                setCmpProfiles((prev) =>
+                                  e.target.checked
+                                    ? [...prev, opt.value]
+                                    : prev.filter((v) => v !== opt.value)
+                                )
+                              }
+                            />
+                            {opt.label}
+                          </label>
+                        ))
+                      : PREFERENCES.map((opt) => (
+                          <label
+                            key={opt.value}
+                            className="flex items-center gap-1.5 text-xs text-slate-300"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={cmpPrefs.includes(opt.value)}
+                              onChange={(e) =>
+                                setCmpPrefs((prev) =>
+                                  e.target.checked
+                                    ? [...prev, opt.value]
+                                    : prev.filter((v) => v !== opt.value)
+                                )
+                              }
+                            />
+                            {opt.label}
+                          </label>
+                        ))}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleComparePersonas}
+                    disabled={!start.trim() || !destination.trim() || compareLoading}
+                    className="w-full rounded-lg border border-cyan-500/40 py-2 text-sm font-semibold text-cyan-300 transition hover:bg-cyan-500/10 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    {compareLoading ? "Loading…" : "Show on map"}
+                  </button>
+                  {personaRoutes.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setPersonaRoutes([])}
+                      className="w-full text-[11px] text-slate-500 hover:text-slate-300"
+                    >
+                      Clear comparison
+                    </button>
+                  )}
+                  {compareError && (
+                    <p className="text-[11px] text-red-300">{compareError}</p>
+                  )}
+                </div>
               </div>
             </div>
 

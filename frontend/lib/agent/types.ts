@@ -57,7 +57,7 @@ export const PROFILE_LABELS: Record<UserProfile, string> = {
 export const PRIORITY_LABELS: Record<UserPriority, string> = {
   fastest: "Fastest",
   least_stressful: "Least stressful",
-  most_accessible: "Most accessible",
+  most_accessible: "Personalized",
   most_reliable: "Most reliable",
 };
 

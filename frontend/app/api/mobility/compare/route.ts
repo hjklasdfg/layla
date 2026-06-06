@@ -11,14 +11,17 @@ export async function POST(request: Request) {
     );
   }
   try {
-    const body = (await request.json()) as { journey?: { start?: string; destination?: string } };
+    const body = (await request.json()) as {
+      journey?: { start?: string; destination?: string };
+      combos?: Array<{ profile: string; priority: string }>;
+    };
     if (!body.journey?.start || !body.journey?.destination) {
       return NextResponse.json({ error: "from and to are required" }, { status: 400 });
     }
     const res = await fetch(`${backend.replace(/\/$/, "")}/mobility/compare`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ journey: body.journey }),
+      body: JSON.stringify({ journey: body.journey, combos: body.combos }),
     });
     const data = await res.json();
     return NextResponse.json(data, { status: res.ok ? 200 : res.status });

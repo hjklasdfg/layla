@@ -19,6 +19,8 @@ _clamp = lambda v: int(max(0, min(100, round(v))))
 VARIANT_NAME = {"personalized": "Personalized route", "fastest": "Fastest route", "safest": "Safest route"}
 PROFILE_LABEL = {"general": "General", "blind": "Blind / low-vision", "wheelchair": "Wheelchair",
                  "elderly": "Elderly", "night_safety": "Night safety"}
+PRIORITY_LABEL = {"most_accessible": "Personalized", "fastest": "Fastest",
+                  "most_reliable": "Safest", "least_stressful": "Calm"}
 
 
 def _signals(r):
@@ -73,7 +75,8 @@ def plan(journey, preference):
     profile = (preference or {}).get("profile", "general")
     if profile == "custom":
         profile = "general"
-    r = rs.get_scored_routes(start, dest, profile)
+    priority = (preference or {}).get("priority", "most_accessible")
+    r = rs.get_scored_routes(start, dest, profile, priority)
     if r.get("error"):
         return None, r["error"]
 
@@ -105,35 +108,37 @@ def plan(journey, preference):
     }, None
 
 
-def compare(journey):
-    """Overlay mode: one recommended route per persona for the same OD."""
+def compare(journey, combos):
+    """Overlay mode: one route per (profile, priority) combo for the same OD."""
     start = (journey or {}).get("start"); dest = (journey or {}).get("destination")
-    r = rs.get_persona_comparison(start, dest)
+    if not combos:
+        return None, "No profile/preference combinations selected."
+    r = rs.get_combo_comparison(start, dest, combos)
     if r.get("error"):
         return None, r["error"]
-    ids = "ABCDE"
     states = []
-    for i, rt in enumerate(r["routes"]):
+    for rt in r["routes"]:
         st = _state(rt)
-        st["id"] = ids[i] if i < len(ids) else f"P{i}"
-        st["name"] = PROFILE_LABEL.get(rt["persona"], rt["persona"])
-        st["persona"] = rt["persona"]
+        st["id"] = rt["id"]
+        st["name"] = (f"{PROFILE_LABEL.get(rt['profile'], rt['profile'])} · "
+                      f"{PRIORITY_LABEL.get(rt['priority'], rt['priority'])}")
+        st["profile"] = rt["profile"]; st["priority"] = rt["priority"]
         states.append(st)
     if not states:
-        return None, "No routes found for any persona."
+        return None, "No routes found for those combinations."
     return {
         "journey": {"start": start, "destination": dest},
         "routes": states,
         "enrichedRoutes": [_enriched(s) for s in states],
         "recommendation": {
             "provider": "backend", "recommendedRouteId": states[0]["id"],
-            "routeComparison": f"{len(states)} persona routes overlaid for {start} → {dest}.",
-            "tradeoffExplanation": "Each coloured line is the recommended route for a different user profile.",
-            "finalRecommendation": "Compare how the route changes per person.",
+            "routeComparison": f"{len(states)} routes overlaid for {start} → {dest}.",
+            "tradeoffExplanation": "Each coloured line is one profile + preference combination.",
+            "finalRecommendation": "Compare how the route changes by profile and preference.",
         },
         "explanation": {
-            "uiText": "**Persona comparison** — each line is the recommended route for a different profile.",
-            "voiceText": "Here are the routes for each persona.",
+            "uiText": "**Comparison** — each line is one profile + preference combination.",
+            "voiceText": "Here are the routes for each selected combination.",
         },
         "meta": {"source": "backend", "from": start, "to": dest, "count": len(states), "profile": "compare"},
     }, None
@@ -169,7 +174,7 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(400, {"error": f"bad JSON: {e}"})
         try:
             if is_compare:
-                resp, err = compare(req.get("journey"))
+                resp, err = compare(req.get("journey"), req.get("combos"))
             else:
                 resp, err = plan(req.get("journey"), req.get("preference"))
         except Exception as e:                       # never crash the handler -> never "fetch failed"

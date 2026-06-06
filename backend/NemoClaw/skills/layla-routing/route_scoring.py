@@ -50,6 +50,22 @@ SCORE_W = {
     "night_safety": {"accessibility": .08, "safety": .50, "quiet": .05, "lighting": .35, "air": .02},
 }
 LENGTH_CAP = 1.5   # exclude routes >50% longer than the fastest (unless strict)
+
+# preference (priority) layers an emphasis ON TOP of the persona's base weights,
+# so each (profile x preference) is a genuinely different route.
+def _combo_weights(profile, priority):
+    base = dict(ROUTE_PROFILES.get(profile, {}))
+    if priority == "fastest":              # shortest, but keep the persona's hard barriers
+        return {k: base[k] for k in ("steps", "incline", "tactile") if k in base}
+    if priority == "most_reliable":        # safest: avoid crime + darkness
+        base["crime"] = base.get("crime", 0) + 6
+        base["darkness"] = base.get("darkness", 0) + 4
+        return base
+    if priority == "least_stressful":      # calm: avoid noise + crime
+        base["noise"] = base.get("noise", 0) + 5
+        base["crime"] = base.get("crime", 0) + 2
+        return base
+    return base                            # most_accessible / personalized: pure profile
 # tiny City-of-London gazetteer for convenience (lat, lon)
 PLACES = {
     "barbican": (51.5203, -0.0972), "moorgate": (51.5186, -0.0886),
@@ -249,10 +265,10 @@ def _build_route(g, path, profile, rid, variant, o, d):
         "mapFeatures": mf,
     }
 
-def get_scored_routes(start, end, profile="general", strict=False):
+def get_scored_routes(start, end, profile="general", priority="most_accessible", strict=False):
     """Plan scored, map-ready routes. start/end = (lat,lon) | 'lat,lon' | place name.
-    strict=True forces accessibility: drops the length cap + (wheelchair/elderly) avoids
-    steps when a step-free option exists."""
+    profile shapes the route (who you are); priority emphasises what to optimise now
+    (most_accessible/fastest/most_reliable/least_stressful) -> the recommended route."""
     g = _graph()
     try:
         o, d = _resolve(start), _resolve(end)
@@ -272,10 +288,10 @@ def get_scored_routes(start, end, profile="general", strict=False):
     s = RE._nearest_node((o[1], o[0]), nc)
     t = RE._nearest_node((d[1], d[0]), nc)
 
-    variants = [("personalized", ROUTE_PROFILES.get(profile, {})),
-                ("fastest", {}),
-                ("safest", ROUTE_PROFILES["night_safety"]),
-                ("quietest", {"steps": 3, "noise": 5.0})]
+    variants = [("personalized", _combo_weights(profile, priority)),       # the chosen profile⊕preference
+                ("fastest", _combo_weights(profile, "fastest")),
+                ("safest", _combo_weights(profile, "most_reliable")),
+                ("quietest", _combo_weights(profile, "least_stressful"))]
     seen, picked = set(), []
     for label, w in variants:
         path = RE._dijkstra(g["adj"], s, t, w, g["cache"])
@@ -293,31 +309,19 @@ def get_scored_routes(start, end, profile="general", strict=False):
     ids = "ABCD"
     routes = [_build_route(g, p, profile, ids[i], lbl, o, d) for i, (lbl, p) in enumerate(picked)]
 
-    # Length-cap baseline = the fastest route the persona can actually USE — a
-    # steps-laden shortcut isn't a fair baseline for blind/wheelchair/elderly.
-    if profile in ("blind", "wheelchair", "elderly"):
-        viable = [r for r in routes if not r["mapFeatures"]["steps"]] or routes
-    else:
-        viable = routes
-    baseline = min(r["distanceM"] for r in viable)
-    if strict:                                   # force full accessibility — drop the length cap
-        pool = routes
-        if profile in ("wheelchair", "elderly"):
-            step_free = [r for r in pool if not r["mapFeatures"]["steps"]]
-            if step_free:
-                pool = step_free
-    else:                                        # exclude routes >50% longer than the viable-fastest
-        pool = [r for r in routes if r["distanceM"] <= baseline * LENGTH_CAP] or routes
-    recommended = max(pool, key=lambda r: r["score"])["id"]
+    # The profile⊕preference route (variant 0, built first) IS the recommendation.
+    recommended = routes[0]["id"]
 
     return {"start": {"lat": o[0], "lng": o[1]}, "end": {"lat": d[0], "lng": d[1]},
-            "profile": profile, "strict": strict, "recommended_id": recommended, "routes": routes}
+            "profile": profile, "priority": priority, "strict": strict,
+            "recommended_id": recommended, "routes": routes}
 
 
 PERSONAS = ("general", "blind", "wheelchair", "elderly", "night_safety")
 
-def get_persona_comparison(start, end):
-    """One recommended route per persona for the same OD — to overlay on one map."""
+def get_combo_comparison(start, end, combos):
+    """One route per (profile, priority) combo for the same OD — overlay on one map.
+    combos = [{"profile": ..., "priority": ...}, ...]"""
     g = _graph()
     try:
         o, d = _resolve(start), _resolve(end)
@@ -327,17 +331,23 @@ def get_persona_comparison(start, end):
     for nm, p in (("Start", o), ("Destination", d)):
         if not (w_ - M <= p[1] <= e_ + M and s_ - M <= p[0] <= n_ + M):
             return {"error": f"{nm} is outside the City of London area we currently cover.", "routes": []}
-    out = []
-    for prof in PERSONAS:
-        r = get_scored_routes(o, d, prof)            # resolved coords -> no re-geocode
-        if r.get("error"):
+    nc = g["node_coord"]
+    s = RE._nearest_node((o[1], o[0]), nc)
+    t = RE._nearest_node((d[1], d[0]), nc)
+    ids = "ABCDEFGHIJKLMNOP"
+    seen, out = set(), []
+    for c in (combos or [])[:8]:
+        prof = c.get("profile", "general"); prio = c.get("priority", "most_accessible")
+        path = RE._dijkstra(g["adj"], s, t, _combo_weights(prof, prio), g["cache"])
+        if not path:
             continue
-        # use the persona's own weighted geometry (max divergence for the overlay),
-        # falling back to the recommended route
-        pers = (next((x for x in r["routes"] if x["variant"] == "personalized"), None)
-                or next((x for x in r["routes"] if x["id"] == r["recommended_id"]), None))
-        if pers:
-            out.append({**pers, "persona": prof})
+        key = tuple(path)
+        if key in seen:                              # dedupe identical geometry across combos
+            continue
+        seen.add(key)
+        rt = _build_route(g, path, prof, ids[len(out)], "personalized", o, d)
+        rt["profile"] = prof; rt["priority"] = prio
+        out.append(rt)
     return {"start": {"lat": o[0], "lng": o[1]}, "end": {"lat": d[0], "lng": d[1]}, "routes": out}
 
 
