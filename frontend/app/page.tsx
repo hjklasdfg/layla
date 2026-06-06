@@ -9,6 +9,7 @@ import { GeminiInputPanel, type ClientPlanPreview } from "@/components/GeminiInp
 import type { LlmPlanInput } from "@/lib/mobility/llm-plan-prompt";
 import { EventSimulator } from "@/components/EventSimulator";
 import { MobilityAgentPanel } from "@/components/MobilityAgentPanel";
+import { NavigationPanel } from "@/components/NavigationPanel";
 import { VoicePanel, type VoicePanelHandle } from "@/components/VoicePanel";
 import { RouteCard } from "@/components/RouteCard";
 import type { MobilityRecommendation, UserPreference } from "@/lib/agent/types";
@@ -28,6 +29,7 @@ import {
 } from "@/lib/mobility/voice-intent";
 import { useGeolocation } from "@/hooks/useGeolocation";
 import { useLiveRoutes } from "@/hooks/useLiveRoutes";
+import { useNavigation } from "@/hooks/useNavigation";
 import type { MobilityRouteState } from "@/lib/mobilityEngine";
 
 const RouteMap = dynamic(
@@ -143,6 +145,7 @@ export default function Home() {
   const [crimeLoading, setCrimeLoading] = useState(false);
   const [crimeError, setCrimeError] = useState<string | null>(null);
   const { location: gpsLocation } = useGeolocation(true);
+  const nav = useNavigation();
   const voiceRef = useRef<VoicePanelHandle>(null);
   const cameraRef = useRef<CameraPanelHandle>(null);
   const planningInFlightRef = useRef(false);
@@ -567,6 +570,21 @@ export default function Home() {
                 )}
               </div>
             </div>
+
+            <NavigationPanel
+              selectedRouteGeometry={
+                mobilityRoutes.find(
+                  (r) => r.id === (highlightedRouteId ?? recommendedId)
+                )?.geometry.coordinates ?? null
+              }
+              journeyLabel={journeyLabel}
+              routeName={
+                mobilityRoutes.find(
+                  (r) => r.id === (highlightedRouteId ?? recommendedId)
+                )?.name
+              }
+              nav={nav}
+            />
 
             {fetchError && (
               <div className="rounded-lg border border-red-500/30 bg-red-950/20 px-3 py-2 text-xs text-red-300">
