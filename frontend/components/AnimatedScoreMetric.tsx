@@ -58,9 +58,9 @@ export function AnimatedScoreMetric({
           : ""
       }`}
     >
-      <div className="flex items-center justify-between text-xs">
-        <span className="text-slate-400">{label}</span>
-        <div className="flex items-center gap-1.5">
+      <div className="flex items-center justify-between gap-1.5 text-xs">
+        <span className="min-w-0 truncate text-slate-400">{label}</span>
+        <div className="flex shrink-0 items-center gap-1.5">
           {delta !== null && (
             <span
               className={`font-mono text-[10px] font-bold ${
