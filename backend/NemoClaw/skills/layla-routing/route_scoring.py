@@ -314,6 +314,33 @@ def get_scored_routes(start, end, profile="general", strict=False):
             "profile": profile, "strict": strict, "recommended_id": recommended, "routes": routes}
 
 
+PERSONAS = ("general", "blind", "wheelchair", "elderly", "night_safety")
+
+def get_persona_comparison(start, end):
+    """One recommended route per persona for the same OD — to overlay on one map."""
+    g = _graph()
+    try:
+        o, d = _resolve(start), _resolve(end)
+    except ValueError:
+        return {"error": "Couldn't find that place. Try a City of London spot or 'lat,lon'.", "routes": []}
+    w_, s_, e_, n_ = _coverage_bbox(g); M = 0.003
+    for nm, p in (("Start", o), ("Destination", d)):
+        if not (w_ - M <= p[1] <= e_ + M and s_ - M <= p[0] <= n_ + M):
+            return {"error": f"{nm} is outside the City of London area we currently cover.", "routes": []}
+    out = []
+    for prof in PERSONAS:
+        r = get_scored_routes(o, d, prof)            # resolved coords -> no re-geocode
+        if r.get("error"):
+            continue
+        # use the persona's own weighted geometry (max divergence for the overlay),
+        # falling back to the recommended route
+        pers = (next((x for x in r["routes"] if x["variant"] == "personalized"), None)
+                or next((x for x in r["routes"] if x["id"] == r["recommended_id"]), None))
+        if pers:
+            out.append({**pers, "persona": prof})
+    return {"start": {"lat": o[0], "lng": o[1]}, "end": {"lat": d[0], "lng": d[1]}, "routes": out}
+
+
 if __name__ == "__main__":
     import json
     OD = ("barbican", "st paul's")

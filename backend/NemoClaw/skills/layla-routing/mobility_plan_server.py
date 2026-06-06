@@ -105,6 +105,40 @@ def plan(journey, preference):
     }, None
 
 
+def compare(journey):
+    """Overlay mode: one recommended route per persona for the same OD."""
+    start = (journey or {}).get("start"); dest = (journey or {}).get("destination")
+    r = rs.get_persona_comparison(start, dest)
+    if r.get("error"):
+        return None, r["error"]
+    ids = "ABCDE"
+    states = []
+    for i, rt in enumerate(r["routes"]):
+        st = _state(rt)
+        st["id"] = ids[i] if i < len(ids) else f"P{i}"
+        st["name"] = PROFILE_LABEL.get(rt["persona"], rt["persona"])
+        st["persona"] = rt["persona"]
+        states.append(st)
+    if not states:
+        return None, "No routes found for any persona."
+    return {
+        "journey": {"start": start, "destination": dest},
+        "routes": states,
+        "enrichedRoutes": [_enriched(s) for s in states],
+        "recommendation": {
+            "provider": "backend", "recommendedRouteId": states[0]["id"],
+            "routeComparison": f"{len(states)} persona routes overlaid for {start} → {dest}.",
+            "tradeoffExplanation": "Each coloured line is the recommended route for a different user profile.",
+            "finalRecommendation": "Compare how the route changes per person.",
+        },
+        "explanation": {
+            "uiText": "**Persona comparison** — each line is the recommended route for a different profile.",
+            "voiceText": "Here are the routes for each persona.",
+        },
+        "meta": {"source": "backend", "from": start, "to": dest, "count": len(states), "profile": "compare"},
+    }, None
+
+
 class Handler(BaseHTTPRequestHandler):
     def _send(self, code, obj):
         body = json.dumps(obj).encode()
@@ -125,15 +159,19 @@ class Handler(BaseHTTPRequestHandler):
         self._send(404, {"error": "POST /mobility/plan"})
 
     def do_POST(self):
-        if not self.path.startswith("/mobility/plan"):
-            return self._send(404, {"error": "POST /mobility/plan"})
+        is_compare = self.path.startswith("/mobility/compare")
+        if not (is_compare or self.path.startswith("/mobility/plan")):
+            return self._send(404, {"error": "POST /mobility/plan or /mobility/compare"})
         try:
             n = int(self.headers.get("Content-Length", 0))
             req = json.loads(self.rfile.read(n) or b"{}")
         except (ValueError, json.JSONDecodeError) as e:
             return self._send(400, {"error": f"bad JSON: {e}"})
         try:
-            resp, err = plan(req.get("journey"), req.get("preference"))
+            if is_compare:
+                resp, err = compare(req.get("journey"))
+            else:
+                resp, err = plan(req.get("journey"), req.get("preference"))
         except Exception as e:                       # never crash the handler -> never "fetch failed"
             return self._send(500, {"error": f"routing failed: {e}"})
         if err:
