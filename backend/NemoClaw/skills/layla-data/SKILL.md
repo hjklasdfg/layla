@@ -4,9 +4,9 @@ description: >
   Access ingested City-of-London open data for accessibility-aware route
   building: an OSM walkable graph with fused per-edge attributes (accessibility,
   crime, noise), plus crime/noise/air queries and live TfL lift/crowding.
-  Use whenever the agent needs map, safety, or accessibility data for a London
-  location, or needs the fused walkable graph to hand to the routing layer.
-  Does NOT do routing — it returns the graph + data for the router to weight.
+  Use whenever the agent needs map/safety/accessibility data, OR needs
+  scored, map-ready accessible routes (weighted per persona) that the frontend
+  can render directly.
 ---
 
 # Layla — City-of-London Data Skill
@@ -29,7 +29,8 @@ Call these functions; each returns JSON.
 
 | Tool | Input | Returns | When to use |
 |---|---|---|---|
-| `get_walkable_graph(bbox)` | bbox | nodes + edges; each edge `{length_m, highway, lit, is_steps, crime_count, noise_db, air_index}` | **The routing handoff** — give this to the routing layer to weight + search. |
+| `get_scored_routes(start, end, profile)` | start/end (place name \| "lat,lon" \| coords), profile | **map-ready scored routes**: per-persona weighted geometry (`[lat,lng]`) + `score` + `signals{accessibility,safety,comfort}` + `evidence` + `mapFeatures`; `recommended_id` | **Headline tool** — plan a personalized route the frontend renders directly. Different profile → different geometry. |
+| `get_walkable_graph(bbox)` | bbox | nodes + edges; each edge `{length_m, highway, lit, is_steps, crime_count, noise_db, air_index}` | The raw fused graph — for an external router. |
 | `get_context(lat, lon, radius_m=150)` | point | nearby accessibility + crime count + noise + air | "What's around me" at a point (situational query). |
 | `get_accessibility(bbox)` | bbox | crossings/tactile/kerb/steps + tags | Inspect street accessibility features in an area. |
 | `get_crime(bbox, since=None)` | bbox | crime points + breakdown by type | Safety layer for an area. |
@@ -52,6 +53,6 @@ Accessibility is split across three places — use all three:
 - Env: set `TFL_APP_KEY` to enable live `get_live_disruptions` / `get_crowding` (falls back to cached snapshots without it).
 
 ## Boundaries (do NOT)
-- Do **not** route in this skill — return `get_walkable_graph` and let the routing layer weight + search.
+- Routing IS provided via `get_scored_routes` (weighted search on the fused graph, Approach A). For an external router, hand `get_walkable_graph` instead.
 - Do **not** use `get_air` for per-street decisions (monitoring sites are sparse; it's area-level only).
 - Stay within the ingested corridor; out-of-area queries return little/no data.

@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Layla — scored routes (Approach A) test</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="routes_demo.js"></script>
+<style>
+  :root{--bg:#0f1115;--panel:#161a22;--text:#eef1f6;--muted:#9aa3b2;--line:#2a3140}
+  *{box-sizing:border-box} html,body{height:100%;margin:0}
+  body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;background:var(--bg);color:var(--text);display:flex;height:100vh;overflow:hidden}
+  #map{flex:1;background:#dfe3ea}
+  #side{width:340px;flex:0 0 340px;background:var(--panel);border-left:1px solid var(--line);padding:16px;overflow:auto}
+  h1{font-size:18px;margin:0 0 2px} h1 .b{color:#ff7a1a}
+  .sub{font-size:12px;color:var(--muted);margin-bottom:14px}
+  label{display:block;font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);margin:10px 0 4px}
+  select{width:100%;padding:8px;background:#0f1115;color:var(--text);border:1px solid var(--line);border-radius:8px;font-size:14px}
+  .card{border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-top:10px;background:#0f1115}
+  .card.rec{border-color:#22d3ee;box-shadow:0 0 0 1px #22d3ee55}
+  .card .top{display:flex;align-items:center;gap:8px;font-weight:700;font-size:14px}
+  .chip{width:10px;height:10px;border-radius:50%}
+  .badge{margin-left:auto;font-size:10px;background:#22d3ee22;color:#7fe9ff;border:1px solid #22d3ee55;padding:1px 7px;border-radius:99px}
+  .meta{font-size:12px;color:var(--muted);margin:4px 0 8px}
+  .bar{display:flex;align-items:center;gap:6px;font-size:11px;margin:3px 0}
+  .bar .lab{width:64px;color:var(--muted)} .bar .track{flex:1;height:6px;background:#222a36;border-radius:3px;overflow:hidden}
+  .bar .fill{height:100%;border-radius:3px}
+  .ev{font-size:11px;color:#c7cedb;margin-top:6px;line-height:1.5}
+  .ev span{display:inline-block;background:#1c2430;border:1px solid var(--line);border-radius:6px;padding:1px 6px;margin:2px 3px 0 0}
+</style>
+</head>
+<body>
+<div id="map"></div>
+<div id="side">
+  <h1><span class="b">Layla</span> · scored routes</h1>
+  <div class="sub">Approach A — weighted search on the fused graph. Change profile → route geometry changes.</div>
+  <label>Origin → Destination</label>
+  <select id="od"></select>
+  <label>User profile</label>
+  <select id="profile"></select>
+  <div id="cards"></div>
+</div>
+<script>
+(function(){
+  "use strict";
+  if(typeof L==="undefined"||!window.ROUTES){document.getElementById("cards").innerHTML="routes_demo.js / Leaflet 未加载";return;}
+  var R=window.ROUTES;
+  var COLORS={A:"#22d3ee",B:"#a78bfa",C:"#34d399",D:"#fb923c"};
+  var PROFILES=["general","blind","wheelchair","elderly","night_safety"];
+  var PROFILE_LABEL={general:"General",blind:"Blind / low-vision",wheelchair:"Wheelchair",elderly:"Elderly",night_safety:"Night safety"};
+
+  var map=L.map("map",{zoomControl:true}).setView([51.516,-0.093],15);
+  L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",{subdomains:"abcd",maxZoom:20,attribution:"&copy; OSM &copy; CARTO"}).addTo(map);
+  var layer=L.layerGroup().addTo(map);
+
+  var odSel=document.getElementById("od"), pSel=document.getElementById("profile");
+  Object.keys(R).forEach(function(k){var o=document.createElement("option");o.value=k;o.textContent=k;odSel.appendChild(o);});
+  PROFILES.forEach(function(p){var o=document.createElement("option");o.value=p;o.textContent=PROFILE_LABEL[p];pSel.appendChild(o);});
+
+  function bar(lab,val,color){
+    return '<div class="bar"><span class="lab">'+lab+'</span><span class="track"><span class="fill" style="width:'+val+'%;background:'+color+'"></span></span><span>'+val+'</span></div>';
+  }
+  function featDots(mf,color,radius){
+    (mf||[]).forEach(function(f){L.circleMarker([f.lat,f.lng],{radius:radius,color:"#0f1115",weight:1,fillColor:color,fillOpacity:.9}).bindTooltip(f.reason||f.type,{direction:"top"}).addTo(layer);});
+  }
+
+  function render(){
+    layer.clearLayers();
+    var data=R[odSel.value][pSel.value];
+    var cards=document.getElementById("cards");
+    if(!data||data.error){cards.innerHTML='<div class="card">无路线:'+((data&&data.error)||"?")+'</div>';return;}
+    var recId=data.recommended_id, allCoords=[];
+
+    data.routes.forEach(function(rt){
+      var c=COLORS[rt.id]||"#94a3b8", isRec=rt.id===recId;
+      L.polyline(rt.geometry.coordinates,{color:c,weight:isRec?7:3,opacity:isRec?0.95:0.4,lineCap:"round"}).addTo(layer);
+      allCoords=allCoords.concat(rt.geometry.coordinates);
+    });
+    // accessibility points from recommended route
+    var rec=data.routes.find(function(r){return r.id===recId;});
+    if(rec&&rec.mapFeatures){
+      featDots(rec.mapFeatures.crossings,"#3b82f6",4);
+      featDots(rec.mapFeatures.tactilePaving,"#8b5cf6",4);
+      featDots(rec.mapFeatures.steps,"#ef4444",5);
+    }
+    // endpoints
+    L.circleMarker([data.start.lat,data.start.lng],{radius:7,color:"#fff",weight:2,fillColor:"#22d3ee",fillOpacity:1}).bindTooltip("A 起点").addTo(layer);
+    L.circleMarker([data.end.lat,data.end.lng],{radius:7,color:"#fff",weight:2,fillColor:"#f472b6",fillOpacity:1}).bindTooltip("B 终点").addTo(layer);
+    if(allCoords.length) map.fitBounds(L.latLngBounds(allCoords),{padding:[40,40]});
+
+    // cards (recommended first)
+    var sorted=data.routes.slice().sort(function(a,b){return (b.id===recId)-(a.id===recId);});
+    cards.innerHTML=sorted.map(function(rt){
+      var c=COLORS[rt.id]||"#94a3b8", isRec=rt.id===recId, s=rt.signals;
+      return '<div class="card'+(isRec?' rec':'')+'">'+
+        '<div class="top"><span class="chip" style="background:'+c+'"></span>Route '+rt.id+' · '+rt.variant+
+        (isRec?'<span class="badge">推荐</span>':'<span style="margin-left:auto;color:#9aa3b2;font-size:12px">score '+rt.score+'</span>')+'</div>'+
+        '<div class="meta">'+rt.distanceM+' m · '+rt.etaMin+' min'+(isRec?' · score '+rt.score:'')+'</div>'+
+        bar("无障碍",s.accessibility,"#8b5cf6")+bar("安全",s.safety,"#ef4444")+bar("舒适",s.comfort,"#34d399")+
+        '<div class="ev">'+(rt.evidence||[]).map(function(e){return '<span>'+e+'</span>';}).join('')+'</div>'+
+      '</div>';
+    }).join('');
+  }
+  odSel.onchange=render; pSel.onchange=render; render();
+})();
+</script>
+</body>
+</html>
