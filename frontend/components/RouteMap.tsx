@@ -256,6 +256,15 @@ export function RouteMap({
     const grouped = new Map<string, CrimeLocation>();
 
     crimeData.forEach((incident) => {
+      // drop City-of-London-Police outliers recorded far outside London
+      if (
+        incident.latitude < 51.2 ||
+        incident.latitude > 51.8 ||
+        incident.longitude < -0.6 ||
+        incident.longitude > 0.4
+      ) {
+        return;
+      }
       const key = `${incident.latitude.toFixed(6)}-${incident.longitude.toFixed(6)}`;
       const existing = grouped.get(key);
 
@@ -282,15 +291,11 @@ export function RouteMap({
   const hasCrimeLayer = crimeLocations.length > 0;
 
   const bounds = useMemo((): L.LatLngBoundsExpression | null => {
+    // Fit the journey only — crime/overlays must not drive the zoom.
     const routeCoords = routes.flatMap((r) => r.geometry.coordinates);
-    const crimeCoords = crimeLocations.map(
-      (incident) => [incident.latitude, incident.longitude] as [number, number]
-    );
-    const allCoords = [...routeCoords, ...crimeCoords];
-
-    if (allCoords.length === 0) return null;
-    return L.latLngBounds(allCoords);
-  }, [crimeLocations, routes]);
+    if (routeCoords.length === 0) return null;
+    return L.latLngBounds(routeCoords);
+  }, [routes]);
 
   const mapCenter = useMemo((): [number, number] => {
     if (start) return [start.lat, start.lng];
