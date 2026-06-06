@@ -1,0 +1,17 @@
+:80 {
+    handle /v1/* {
+        reverse_proxy vllm-active:18000
+    }
+
+    handle_path /oui* {
+        reverse_proxy open-webui:8080
+    }
+
+    handle {
+        reverse_proxy host.docker.internal:3000
+    }
+}
+
+:8081 {
+    reverse_proxy open-webui:8080
+}

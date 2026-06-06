@@ -22,9 +22,7 @@ CONFIGS = {
 }
 
 def load_dotenv():
-    env_file = Path(__file__).parent / "nebius" / ".env"
-    if not env_file.exists():
-        env_file = Path(__file__).parent / ".env"
+    env_file = Path(__file__).parent / ".env"
     if not env_file.exists():
         return
     for line in env_file.read_text().splitlines():

@@ -26,8 +26,8 @@ scripts/
 ## Setup
 
 ```bash
-cp nebius/.env.example nebius/.env
-# edit nebius/.env and set NEBIUS_API_KEY
+cp .env.example .env
+# edit .env and set NEBIUS_API_KEY
 ```
 
 ---
@@ -46,7 +46,7 @@ python3 nano-image-chat.py <image_path> [prompt] [--type nebius|dgx]
 |---|---|---|
 | `image_path` | required | path to image (jpg, png, webp) |
 | `prompt` | `"What's in this image? Describe in detail."` | question to ask |
-| `--type nebius` | default | Nebius cloud endpoint, reads `NEBIUS_API_KEY` from `nebius/.env` |
+| `--type nebius` | default | Nebius cloud endpoint, reads `NEBIUS_API_KEY` from `.env` |
 | `--type dgx` | — | local vLLM on `localhost:18000` |
 
 ### Examples

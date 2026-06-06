@@ -5,10 +5,10 @@
 #
 # Usage: ./cloudflared-tunnel.sh [port] [env-file]
 #   port      — vLLM port to expose (default: 18000)
-#   env-file  — .env to update with VLLM_PUBLIC_URL (default: ../nebius/.env)
+#   env-file  — .env to update with VLLM_PUBLIC_URL (default: ../.env)
 
 PORT="${1:-18000}"
-ENV_FILE="${2:-$(dirname "$0")/../nebius/.env}"
+ENV_FILE="${2:-$(dirname "$0")/../.env}"
 LOG_FILE="/tmp/cloudflared-${PORT}.log"
 
 if ! command -v cloudflared &>/dev/null; then

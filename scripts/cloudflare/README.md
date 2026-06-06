@@ -1,12 +1,32 @@
-# Cloudflare Tunnel
+# Cloudflare Tunnel + Caddy
 
-Expose the local vLLM endpoint to the internet via [Cloudflare Quick Tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/do-more-with-tunnels/trycloudflare/) — no account needed, no DNS setup required.
+Single authenticated entry point for all services — vLLM, Open WebUI, and the frontend — via Caddy reverse proxy and a **named Cloudflare Tunnel** with a stable HTTPS URL.
+
+---
+
+## Architecture
+
+```
+Internet / Intranet
+       │
+       ▼
+https://layla.ai-cloud.io   (stable URL, Cloudflare edge)
+       │  named tunnel
+       ▼
+cloudflared → localhost:80
+       │
+       ▼
+caddy-proxy  (Docker, vllm-net, basic auth)
+ ├── /v1/*  → vllm-active:18000          (vLLM OpenAI API)
+ ├── /oui/* → open-webui:8080            (Open WebUI, prefix stripped)
+ └── /*     → host.docker.internal:3000  (Next.js frontend)
+```
 
 ---
 
 ## Install cloudflared
 
-Via the official Cloudflare apt repository (works on amd64 and ARM64 / DGX Spark):
+Via the official Cloudflare apt repository (amd64 and ARM64 / DGX Spark):
 
 ```bash
 sudo mkdir -p --mode=0755 /usr/share/keyrings
@@ -14,114 +34,133 @@ curl -fsSL https://pkg.cloudflare.com/cloudflare-main.gpg | sudo tee /usr/share/
 echo "deb [signed-by=/usr/share/keyrings/cloudflare-main.gpg] https://pkg.cloudflare.com/cloudflared any main" | sudo tee /etc/apt/sources.list.d/cloudflared.list
 sudo apt-get update && sudo apt-get install cloudflared
 
-# Verify
 cloudflared --version
 ```
 
 ---
 
-## Quick Tunnel
+## Setup (one-time)
 
-```bash
-# Default — exposes localhost:18000
-./cloudflare/cloudflared-tunnel.sh
+### 1. Cloudflare API token
 
-# Custom port
-./cloudflare/cloudflared-tunnel.sh 18000
+Create a token at **dash.cloudflare.com → My Profile → API Tokens** with:
+- `Cloudflare Tunnel:Edit`
+- `DNS:Edit` (for the `ai-cloud.io` zone)
 
-# Custom port + custom .env target
-./cloudflare/cloudflared-tunnel.sh 18000 /path/to/.env
+Add to `.env`:
+```
+CLOUDFLARE_API_TOKEN=your_token_here
 ```
 
-The script:
-1. Starts a Quick Tunnel to `localhost:<port>`
-2. Waits for the `*.trycloudflare.com` URL to appear
-3. Prints the URL prominently
-4. Writes `VLLM_PUBLIC_URL=https://...trycloudflare.com` into `nebius/.env`
+### 2. Caddy password hash
+
+```bash
+docker run --rm caddy:alpine caddy hash-password --plaintext 'yourpassword'
+# → $2a$14$...
+```
+
+Add to `.env`:
+```
+CADDY_USER=layla
+CADDY_HASHED_PASSWORD=$2a$14$...
+```
+
+### 3. Create named tunnel + DNS
+
+```bash
+./cloudflare/setup-named-tunnel.sh
+# Default: tunnel=layla-hackathon  hostname=layla.ai-cloud.io
+
+# Custom subdomain:
+./cloudflare/setup-named-tunnel.sh layla-hackathon demo.ai-cloud.io
+```
+
+This:
+1. Creates the tunnel in your Cloudflare account
+2. Writes `cloudflared.yml` (tunnel config + ingress rules)
+3. Creates the CNAME DNS record `layla.ai-cloud.io → <tunnel-id>.cfargotunnel.com`
+4. Writes `TUNNEL_NAME`, `TUNNEL_HOSTNAME`, `GATEWAY_URL` to `.env`
 
 ---
 
-## Keeping the tunnel alive (hackathon / multi-day)
+## Daily startup
 
-Quick tunnels last **as long as the process runs** — there is no 12-hour expiry. The URL only changes if the process is restarted. To survive SSH disconnects, run inside tmux:
+Run in this order:
 
 ```bash
+# 1. vLLM
+./dgx/nemotron-nano-omni-30b-nvfp4.sh
+
+# 2. Open WebUI
+./dgx/open-webui.sh
+
+# 3. Frontend (in frontend/)
+bun dev
+
+# 4. Caddy proxy
+./cloudflare/caddy.sh
+
+# 5. Named tunnel (in tmux — survives SSH disconnects)
 tmux new -s tunnel
-./cloudflare/cloudflared-tunnel.sh
-# Ctrl+B then D  →  detach (tunnel keeps running)
-
-# Re-attach later
-tmux attach -t tunnel
+./cloudflare/run-named-tunnel.sh
+# Ctrl+B, D  →  detach
 ```
 
----
+The URL is always `https://layla.ai-cloud.io` — no `.env` updates needed after restart.
 
-## Using the public URL
-
-After the tunnel starts, `VLLM_PUBLIC_URL` is written to `nebius/.env`. Use it anywhere you need the external endpoint:
+### Update frontend endpoint (one-time after setup)
 
 ```bash
-# One-off check
-source nebius/.env
-curl ${VLLM_PUBLIC_URL}/v1/models
-
-# Pass to nano-image-chat.py via env override (no code change needed)
-VLLM_PUBLIC_URL=https://xxxx.trycloudflare.com python3 nano-image-chat.py assets/police-road-block-AG3Y12.jpg
+# Edit frontend/.env.local
+NEMOTRON_BASE_URL=https://layla.ai-cloud.io
+# Restart bun dev
 ```
 
 ---
 
-## Open WebUI via cloudflare tunnel (test / loop instance)
+## Intranet access (no tunnel needed)
 
-To verify the tunnel end-to-end, spin up a second Open WebUI instance (`open-webui-cf`) on port **3002** that routes through the cloudflare URL instead of the internal Docker network:
+```
+http://10.18.216.16/        → Frontend
+http://10.18.216.16/v1/     → vLLM API
+http://10.18.216.16/oui/    → Open WebUI (or :8081 if subpath fails)
+```
+
+---
+
+## OUI subpath risk
+
+Open WebUI (SvelteKit SPA) uses absolute-root asset paths (`/_app/immutable/...`). When proxied at `/oui/`, the HTML loads but JS/CSS may 404. If so, use the fallback port:
+
+```
+http://10.18.216.16:8081/   → Open WebUI at root (intranet only)
+```
+
+The cloudflare tunnel covers frontend and vLLM without OUI.
+
+---
+
+## Verification
 
 ```bash
-docker run -d \
-  --name open-webui-cf \
-  -p 3002:8080 \
-  -v open-webui-cf-data:/app/backend/data \
-  -e OPENAI_API_BASE_URLS="https://xxxx.trycloudflare.com/v1" \
-  -e OPENAI_API_KEY="dummy" \
-  -e WEBUI_AUTH=False \
-  -e ENABLE_OLLAMA_API=False \
-  ghcr.io/open-webui/open-webui:main
-```
+# Caddy running
+docker ps --filter name=caddy-proxy --format "{{.Status}}"
 
-Replace `xxxx.trycloudflare.com` with the URL printed by `cloudflared-tunnel.sh`.
-
-**VS Code Remote SSH** — VS Code does not auto-forward port 3002. Add it manually:
-Ports panel → **Forward a Port** → `3002`, then open `http://localhost:3002`.
-
-| Instance | Port | Backend |
-|---|---|---|
-| `open-webui` | 3001 | vLLM direct via `vllm-net` Docker network |
-| `open-webui-cf` | 3002 | vLLM via cloudflare tunnel (loop test) |
-
----
-
-## Tunnel URL rotation
-
-If the process dies and restarts, cloudflare assigns a **new** random URL. The script automatically updates `VLLM_PUBLIC_URL` in `.env` on each start. Re-source the file or restart any service that reads it.
-
-For `open-webui-cf`, recreate the container with the new URL:
-```bash
-docker rm -f open-webui-cf
-# re-run the docker run command above with the new URL
+# Routes (basic auth)
+curl -u layla:yourpassword https://layla.ai-cloud.io/v1/models
+curl -u layla:yourpassword https://layla.ai-cloud.io/
 ```
 
 ---
 
-## Architecture
+## Files
 
-```
-Internet
-   │
-   ▼
-*.trycloudflare.com   (Cloudflare edge — free, no account)
-   │  encrypted tunnel
-   ▼
-cloudflared (this machine)
-   │  localhost
-   ├──▶ vLLM  :18000
-   └──▶ open-webui-cf  :3002  (loop test: OUI → cloudflare → vLLM)
-```
+| File | Purpose |
+|---|---|
+| `Caddyfile` | Route config: `/v1/*` → vLLM, `/oui/*` → OUI, `/*` → frontend |
+| `caddy.sh` | Start `caddy-proxy` Docker container |
+| `setup-named-tunnel.sh` | **One-time**: create tunnel, write `cloudflared.yml`, route DNS |
+| `run-named-tunnel.sh` | **Daily**: run the named tunnel (stable URL) |
+| `cloudflared.yml` | Generated by setup script — tunnel ID + ingress rules |
+| `cloudflared-all.sh` | Quick tunnel fallback (3 URLs, no auth, for quick testing) |
+| `cloudflared-tunnel.sh` | Single-port quick tunnel (standalone) |
