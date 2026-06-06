@@ -124,7 +124,10 @@ class Handler(BaseHTTPRequestHandler):
             req = json.loads(self.rfile.read(n) or b"{}")
         except (ValueError, json.JSONDecodeError) as e:
             return self._send(400, {"error": f"bad JSON: {e}"})
-        resp, err = plan(req.get("journey"), req.get("preference"))
+        try:
+            resp, err = plan(req.get("journey"), req.get("preference"))
+        except Exception as e:                       # never crash the handler -> never "fetch failed"
+            return self._send(500, {"error": f"routing failed: {e}"})
         if err:
             return self._send(422, {"error": err})
         self._send(200, resp)

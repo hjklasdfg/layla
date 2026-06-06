@@ -112,6 +112,24 @@ def _graph():
         pass
     return _GRAPH
 
+def _geocode(q):
+    """Best-effort Nominatim geocode, biased to central London. stdlib only."""
+    import urllib.request, urllib.parse, json as _json
+    params = urllib.parse.urlencode({
+        "q": f"{q}, London, UK", "format": "json", "limit": 1,
+        "viewbox": "-0.125,51.506,-0.070,51.526", "bounded": 0,
+    })
+    req = urllib.request.Request("https://nominatim.openstreetmap.org/search?" + params,
+                                 headers={"User-Agent": "Layla/0.1 (accessibility mobility hackathon)"})
+    try:
+        with urllib.request.urlopen(req, timeout=8) as r:
+            hits = _json.load(r)
+        if hits:
+            return (float(hits[0]["lat"]), float(hits[0]["lon"]))
+    except Exception:
+        pass
+    return None
+
 def _resolve(loc):
     if isinstance(loc, (list, tuple)) and len(loc) == 2:
         return (float(loc[0]), float(loc[1]))
@@ -125,7 +143,20 @@ def _resolve(loc):
         k = s.lower().replace("’", "'")
         if k in PLACES:
             return PLACES[k]
+        geo = _geocode(s)                 # fall back to geocoding unknown place names
+        if geo:
+            return geo
     raise ValueError(f"cannot resolve location: {loc!r}")
+
+_BBOX = None
+def _coverage_bbox(g):
+    """(w, s, e, n) of the routable graph — to reject out-of-coverage requests cleanly."""
+    global _BBOX
+    if _BBOX is None:
+        lons = [c[0] for c in g["node_coord"].values()]
+        lats = [c[1] for c in g["node_coord"].values()]
+        _BBOX = (min(lons), min(lats), max(lons), max(lats))
+    return _BBOX
 
 def _pt_near_path(lat, lon, path_nc, tol=28.0):
     return any(RE._haversine((lon, lat), c) <= tol for c in path_nc)
@@ -215,7 +246,20 @@ def get_scored_routes(start, end, profile="general", strict=False):
     strict=True forces accessibility: drops the length cap + (wheelchair/elderly) avoids
     steps when a step-free option exists."""
     g = _graph()
-    o, d = _resolve(start), _resolve(end)
+    try:
+        o, d = _resolve(start), _resolve(end)
+    except ValueError:
+        return {"error": "Couldn't find that place. Try a City of London spot "
+                "(Barbican, Bank, St Paul's, Liverpool Street, Farringdon, Aldgate…) or 'lat,lon'.",
+                "routes": []}
+    w_, s_, e_, n_ = _coverage_bbox(g)
+    M = 0.003
+    for nm, p in (("Start", o), ("Destination", d)):
+        if not (w_ - M <= p[1] <= e_ + M and s_ - M <= p[0] <= n_ + M):
+            return {"error": f"{nm} is outside the City of London area we currently cover "
+                    "(roughly the Square Mile: Barbican–Aldgate–Blackfriars). Pick a City "
+                    "location — coverage expands by re-ingesting a larger OSM area.",
+                    "start": {"lat": o[0], "lng": o[1]}, "end": {"lat": d[0], "lng": d[1]}, "routes": []}
     nc = g["node_coord"]
     s = RE._nearest_node((o[1], o[0]), nc)
     t = RE._nearest_node((d[1], d[0]), nc)
