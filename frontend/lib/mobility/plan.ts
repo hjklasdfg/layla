@@ -1,6 +1,6 @@
 import type { EnrichedRoute } from "@/lib/accessibility/types";
 import type { MobilityRecommendation, UserPreference } from "@/lib/agent/types";
-import type { RouteExplanation } from "@/lib/mobility/backend-plan-types";
+import type { JourneyMapPoint, RouteExplanation } from "@/lib/mobility/backend-plan-types";
 import type { LlmPlanInput } from "@/lib/mobility/llm-plan-prompt";
 import type { MobilityRouteState } from "@/lib/mobilityEngine";
 import type { CameraDataItem, GpsLocation } from "@/lib/mobility/sensors";
@@ -29,6 +29,8 @@ export interface MobilityPlanResponse {
     count: number;
     profile: UserPreference["profile"];
     osmWarning?: string;
+    startPoint?: JourneyMapPoint;
+    endPoint?: JourneyMapPoint;
     llmInput?: LlmPlanInput;
     /** @deprecated use llmInput */
     geminiInput?: LlmPlanInput;

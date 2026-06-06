@@ -30,6 +30,23 @@ function profileBoost(route: EnrichedRoute, profile: UserPreference["profile"]):
       return signals.predictability * 0.1 - signals.crossingComplexity * 0.08;
     case "elderly":
       return signals.accessibility * 0.08 - signals.stress * 0.06;
+    case "sensitive":
+      return (
+        (100 - signals.crowding) * 0.12 +
+        (100 - signals.stress) * 0.08 +
+        signals.predictability * 0.08 -
+        signals.crossingComplexity * 0.1
+      );
+    case "tourist": {
+      const walk = route.walkingMinutes ?? 0;
+      const transfers = route.transferCount ?? 0;
+      return (
+        Math.min(walk, 35) * 0.35 +
+        (100 - signals.stress) * 0.06 +
+        signals.predictability * 0.04 -
+        transfers * 3
+      );
+    }
     case "custom":
     case "general":
     default:

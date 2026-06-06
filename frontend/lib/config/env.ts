@@ -17,7 +17,12 @@ export const serverEnv = {
   },
   gemini: {
     apiKey: readEnv("GEMINI_API_KEY"),
-    model: readEnv("GEMINI_MODEL") || "gemini-2.0-flash",
+    model: readEnv("GEMINI_MODEL") || "gemini-2.5-flash",
+    /** Hazard photo analysis — defaults to GEMINI_MODEL */
+    visionModel:
+      readEnv("GEMINI_VISION_MODEL") ||
+      readEnv("GEMINI_MODEL") ||
+      "gemini-2.5-flash",
     get enabled() {
       return Boolean(this.apiKey);
     },
@@ -34,7 +39,25 @@ export const serverEnv = {
       return Boolean(this.baseUrl);
     },
   },
-  llmProvider: readEnv("LLM_PROVIDER") || "nemotron",
+  /** Nebius AI Studio — hazard report agent (vision + web search + email draft) */
+  nebiusai: {
+    apiKey: readEnv("NEBUISAI_API_KEY") || readEnv("NEBIUS_API_KEY"),
+    baseUrl:
+      readEnv("NEBUISAI_BASE_URL") ||
+      readEnv("NEBIUS_BASE_URL") ||
+      "https://api.tokenfactory.nebius.com/v1",
+    model:
+      readEnv("NEBUISAI_MODEL") ||
+      readEnv("NEBIUS_MODEL") ||
+      "Qwen/Qwen3-32B",
+    visionModel:
+      readEnv("NEBUISAI_VISION_MODEL") ||
+      "Qwen/Qwen2.5-VL-72B-Instruct",
+    get enabled() {
+      return Boolean(this.apiKey);
+    },
+  },
+  llmProvider: readEnv("LLM_PROVIDER") || "gemini",
   backend: {
     apiUrl: readEnv("BACKEND_API_URL"),
     apiKey: readEnv("BACKEND_API_KEY"),
@@ -94,7 +117,7 @@ export function tflQueryParams(): string {
 }
 
 export const publicEnv = {
-  llmProvider: readEnv("NEXT_PUBLIC_LLM_PROVIDER") || "nemotron",
+  llmProvider: readEnv("NEXT_PUBLIC_LLM_PROVIDER") || "gemini",
   elevenlabsAgentId: readEnv("NEXT_PUBLIC_ELEVENLABS_AGENT_ID"),
   /** Voice input via ElevenLabs Scribe (set true when ELEVENLABS_API_KEY is configured). */
   voiceEnabled:

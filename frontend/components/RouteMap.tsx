@@ -14,6 +14,7 @@ import L from "leaflet";
 import type { FeatureCollection } from "geojson";
 import type { CrimeIncident, CrimeIncidentMeta } from "@/lib/crime/types";
 import type { MobilityRouteState } from "@/lib/mobilityEngine";
+import type { PersonaRoutePick } from "@/lib/mobility/persona-routes";
 import {
   AccessibilityLayer,
   EndpointMarker,
@@ -76,9 +77,34 @@ export interface RouteMapProps {
   onRouteSelect?: (routeId: string) => void;
   startLabel?: string;
   endLabel?: string;
+  startPoint?: { lat: number; lng: number; name?: string } | null;
+  endPoint?: { lat: number; lng: number; name?: string } | null;
+  /** Changes when journey/routes change — forces Leaflet to remount cleanly. */
+  mapRevision?: string;
   highContrast?: boolean;
   crimeIncidents?: CrimeIncident[];
   crimeMeta?: CrimeIncidentMeta | null;
+  /** One highlighted path per traveller persona */
+  personaRoutes?: PersonaRoutePick[];
+}
+
+function endpointsForRoute(route: MobilityRouteState | undefined): {
+  start: { lat: number; lng: number } | null;
+  end: { lat: number; lng: number } | null;
+} {
+  if (!route) return { start: null, end: null };
+
+  const coords = route.geometry.coordinates;
+  if (coords.length >= 2) {
+    const first = coords[0]!;
+    const last = coords[coords.length - 1]!;
+    return {
+      start: { lat: first[0], lng: first[1] },
+      end: { lat: last[0], lng: last[1] },
+    };
+  }
+
+  return { start: route.start ?? null, end: route.end ?? null };
 }
 
 function LayerToggle({
@@ -227,15 +253,39 @@ export function RouteMap({
   onRouteSelect,
   startLabel = "Start",
   endLabel = "Destination",
+  startPoint: startPointProp,
+  endPoint: endPointProp,
+  mapRevision = "default",
   highContrast: highContrastProp = false,
   crimeIncidents = [],
   crimeMeta = null,
+  personaRoutes = [],
 }: RouteMapProps) {
   const [layers, setLayers] = useState<MapLayerVisibility>(DEFAULT_LAYERS);
   const highContrast = highContrastProp;
+  const multiPersona = personaRoutes.length > 0;
 
-  // Crime is a lazy-loaded toggle layer: fetch on first enable.
+  const activeRoute = useMemo(() => {
+    if (!routes.length) return undefined;
+    if (selectedRouteId) {
+      return routes.find((route) => route.id === selectedRouteId) ?? routes[0];
+    }
+    return routes[0];
+  }, [routes, selectedRouteId]);
+
+  const routeEndpoints = useMemo(
+    () => endpointsForRoute(activeRoute),
+    [activeRoute]
+  );
+
+  const start = startPointProp ?? routeEndpoints.start;
+  const end = endPointProp ?? routeEndpoints.end;
+
   const [crimeData, setCrimeData] = useState<CrimeIncident[]>(crimeIncidents);
+  useEffect(() => {
+    setCrimeData(crimeIncidents);
+  }, [crimeIncidents]);
+
   useEffect(() => {
     if (!layers.crimeIncidents || crimeData.length) return;
     let on = true;
@@ -250,8 +300,6 @@ export function RouteMap({
     };
   }, [layers.crimeIncidents, crimeData.length]);
 
-  const start = routes[0]?.start;
-  const end = routes[0]?.end;
   const crimeLocations = useMemo(() => {
     const grouped = new Map<string, CrimeLocation>();
 
@@ -282,15 +330,23 @@ export function RouteMap({
   const hasCrimeLayer = crimeLocations.length > 0;
 
   const bounds = useMemo((): L.LatLngBoundsExpression | null => {
-    const routeCoords = routes.flatMap((r) => r.geometry?.coordinates ?? []);
+    const routeCoords =
+      activeRoute?.geometry.coordinates ?? routes[0]?.geometry.coordinates ?? [];
+    const markerCoords: [number, number][] = [];
+    if (start) markerCoords.push([start.lat, start.lng]);
+    if (end) markerCoords.push([end.lat, end.lng]);
     const crimeCoords = crimeLocations.map(
       (incident) => [incident.latitude, incident.longitude] as [number, number]
     );
-    const allCoords = [...routeCoords, ...crimeCoords];
+    const personaCoords = personaRoutes.flatMap((pick) => {
+      const route = routes.find((r) => r.id === pick.routeId);
+      return route?.geometry.coordinates ?? [];
+    });
+    const allCoords = [...routeCoords, ...markerCoords, ...crimeCoords, ...personaCoords];
 
     if (allCoords.length === 0) return null;
     return L.latLngBounds(allCoords);
-  }, [crimeLocations, routes]);
+  }, [activeRoute, crimeLocations, end, personaRoutes, routes.length, start]);
 
   const mapCenter = useMemo((): [number, number] => {
     if (start) return [start.lat, start.lng];
@@ -379,6 +435,7 @@ export function RouteMap({
       </div>
 
       <MapContainer
+        key={mapRevision}
         center={mapCenter}
         zoom={14}
         className="h-[360px] w-full sm:h-[420px]"
@@ -414,16 +471,16 @@ export function RouteMap({
         {layers.routes &&
           routes.map((route) => {
             const isSelected =
-              !selectedRouteId || route.id === selectedRouteId;
+              !multiPersona && (!selectedRouteId || route.id === selectedRouteId);
             const color = ROUTE_COLORS[route.id] ?? "#94a3b8";
             return (
               <Polyline
-                key={route.id}
-                positions={route.geometry?.coordinates ?? []}
+                key={`${mapRevision}-${route.id}`}
+                positions={route.geometry.coordinates}
                 pathOptions={{
                   color,
                   weight: isSelected ? 6 : 3,
-                  opacity: isSelected ? 0.95 : 0.45,
+                  opacity: multiPersona ? 0.22 : isSelected ? 0.95 : 0.45,
                   lineCap: "round",
                   lineJoin: "round",
                 }}
@@ -438,7 +495,32 @@ export function RouteMap({
             );
           })}
 
+        {layers.routes &&
+          personaRoutes.map((pick) => {
+            const route = routes.find((r) => r.id === pick.routeId);
+            if (!route) return null;
+            return (
+              <Polyline
+                key={`${mapRevision}-persona-${pick.profile}`}
+                positions={route.geometry.coordinates}
+                pathOptions={{
+                  color: pick.color,
+                  weight: 7,
+                  opacity: 0.92,
+                  lineCap: "round",
+                  lineJoin: "round",
+                  dashArray: pick.dashArray,
+                }}
+              >
+                <Tooltip sticky className="!text-xs !font-semibold">
+                  {pick.label} → Route {pick.routeId} · {route.etaMin} min
+                </Tooltip>
+              </Polyline>
+            );
+          })}
+
         <AccessibilityLayer
+          key={`${mapRevision}-a11y`}
           routes={routes}
           layers={layers}
           highContrast={highContrast}
@@ -453,29 +535,44 @@ export function RouteMap({
       </MapContainer>
 
       <div className="flex flex-wrap gap-3 border-t border-slate-700/50 bg-slate-950/80 px-3 py-2">
-        {routes.map((route) => {
-          const color = ROUTE_COLORS[route.id] ?? "#94a3b8";
-          const active = route.id === selectedRouteId;
-          return (
-            <button
-              key={route.id}
-              type="button"
-              onClick={() => onRouteSelect?.(route.id)}
-              className={`flex items-center gap-2 rounded-md px-2 py-1 text-xs font-medium transition ${
-                active
-                  ? "bg-cyan-500/20 text-cyan-200 ring-1 ring-cyan-500/40"
-                  : "text-slate-400 hover:text-slate-200"
-              }`}
-              aria-pressed={active}
+        {personaRoutes.length > 0 ? (
+          personaRoutes.map((pick) => (
+            <span
+              key={pick.profile}
+              className="flex items-center gap-2 rounded-md border border-slate-700/60 bg-slate-900/60 px-2 py-1 text-xs text-slate-200"
             >
               <span
                 className="h-2.5 w-6 rounded-full"
-                style={{ backgroundColor: color }}
+                style={{ backgroundColor: pick.color }}
               />
-              {route.name ?? `Route ${route.id}`} · {route.etaMin} min
-            </button>
-          );
-        })}
+              {pick.label} → Route {pick.routeId}
+            </span>
+          ))
+        ) : (
+          routes.map((route) => {
+            const color = ROUTE_COLORS[route.id] ?? "#94a3b8";
+            const active = route.id === selectedRouteId;
+            return (
+              <button
+                key={route.id}
+                type="button"
+                onClick={() => onRouteSelect?.(route.id)}
+                className={`flex items-center gap-2 rounded-md px-2 py-1 text-xs font-medium transition ${
+                  active
+                    ? "bg-cyan-500/20 text-cyan-200 ring-1 ring-cyan-500/40"
+                    : "text-slate-400 hover:text-slate-200"
+                }`}
+                aria-pressed={active}
+              >
+                <span
+                  className="h-2.5 w-6 rounded-full"
+                  style={{ backgroundColor: color }}
+                />
+                {route.name ?? `Route ${route.id}`} · {route.etaMin} min
+              </button>
+            );
+          })
+        )}
         {hasCrimeLayer && crimeMeta && (
           <span className="self-center rounded-md border border-orange-400/25 bg-orange-500/10 px-2 py-1 text-[10px] font-medium text-orange-100">
             Crime map · {crimeMeta.mappedCount} mapped ·{" "}

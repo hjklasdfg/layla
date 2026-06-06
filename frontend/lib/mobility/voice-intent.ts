@@ -23,6 +23,14 @@ const PROFILE_PATTERNS: Array<{
     pattern: /\b(wheelchair|wheel chair|mobility scooter|step[- ]free)\b/i,
   },
   { profile: "elderly", pattern: /\b(elderly|older adult|senior)\b/i },
+  {
+    profile: "sensitive",
+    pattern: /\b(autism|autistic|sensory|sensitive traveller|neurodivergent|overwhelmed)\b/i,
+  },
+  {
+    profile: "tourist",
+    pattern: /\b(tourist|city walk|sightseeing|explore|walking tour|stroll)\b/i,
+  },
 ];
 
 /** True when speech likely contains a journey planning request. */

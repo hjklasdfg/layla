@@ -107,12 +107,18 @@ function VoicePanelPlaceholder() {
 }
 
 function isBenignScribeCloseError(message: string): boolean {
+  const normalized = message.toLowerCase();
   return (
-    message.includes("1006") ||
-    message.includes("1000") ||
-    message.includes("User ended session")
+    normalized.includes("1006") ||
+    normalized.includes("1000") ||
+    normalized.includes("1005") ||
+    normalized.includes("user ended session") ||
+    normalized.includes("websocket closed")
   );
 }
+
+/** VAD mode auto-commits — wait for silence before disconnect (see vadSilenceThresholdSecs). */
+const VAD_FLUSH_MS = 1300;
 
 const VoicePanelActive = forwardRef<
   VoicePanelHandle,
@@ -132,6 +138,7 @@ const VoicePanelActive = forwardRef<
   const unmountedRef = useRef(false);
   const scribeRef = useRef<ReturnType<typeof useScribe> | null>(null);
   const intentionalCloseRef = useRef(false);
+  const acceptingTranscriptRef = useRef(false);
   const livePartialRef = useRef("");
   const lastSpokenRef = useRef("");
   const onUserSpeechRef = useRef(onUserSpeech);
@@ -171,29 +178,26 @@ const VoicePanelActive = forwardRef<
 
     setIsListening(false);
     setLivePartial("");
+    acceptingTranscriptRef.current = true;
 
     const activeScribe = scribeRef.current;
     const pendingPartial = livePartialRef.current.trim();
-    livePartialRef.current = "";
 
     if (activeScribe?.isConnected) {
       intentionalCloseRef.current = true;
-      try {
-        activeScribe.commit();
-      } catch {
-        // commit optional if session already closed
-      }
-      await new Promise((resolve) => setTimeout(resolve, 700));
+      // VAD commits automatically — do not call commit() (can trigger abnormal close).
+      await new Promise((resolve) => setTimeout(resolve, VAD_FLUSH_MS));
       try {
         activeScribe.disconnect();
       } catch {
         // ignore disconnect errors
       }
-      await new Promise((resolve) => setTimeout(resolve, 200));
+      await new Promise((resolve) => setTimeout(resolve, 300));
     }
 
+    acceptingTranscriptRef.current = false;
     isListeningRef.current = false;
-    intentionalCloseRef.current = false;
+    livePartialRef.current = "";
 
     let combined = listeningBufferRef.current.join(" ").trim();
     if (!combined && pendingPartial) {
@@ -226,14 +230,24 @@ const VoicePanelActive = forwardRef<
             "error" in err &&
             typeof (err as { error?: unknown }).error === "string"
           ? (err as { error: string }).error
-          : "Voice connection failed";
+          : typeof err === "object" &&
+              err !== null &&
+              "message" in err &&
+              typeof (err as { message?: unknown }).message === "string"
+            ? (err as { message: string }).message
+            : "Voice connection failed";
 
-    if (intentionalCloseRef.current && isBenignScribeCloseError(message)) {
+    // ElevenLabs SDK logs 1006 on normal mic teardown — not a user-facing failure.
+    if (isBenignScribeCloseError(message)) {
+      return;
+    }
+    if (intentionalCloseRef.current) {
       return;
     }
 
     setConnecting(false);
     isListeningRef.current = false;
+    acceptingTranscriptRef.current = false;
     setIsListening(false);
     setScribeError(message);
   }, []);
@@ -253,7 +267,7 @@ const VoicePanelActive = forwardRef<
       setLivePartial(partial);
     },
     onCommittedTranscript: ({ text }) => {
-      if (!isListeningRef.current) return;
+      if (!isListeningRef.current && !acceptingTranscriptRef.current) return;
       handleCommittedTranscript(text);
     },
     onError: handleScribeError,
@@ -269,10 +283,15 @@ const VoicePanelActive = forwardRef<
       );
     },
     onDisconnect: () => {
-      intentionalCloseRef.current = false;
       isListeningRef.current = false;
+      acceptingTranscriptRef.current = false;
       setIsListening(false);
       setConnecting(false);
+      intentionalCloseRef.current = false;
+    },
+    onSessionStarted: () => {
+      intentionalCloseRef.current = false;
+      setScribeError(null);
     },
   });
 

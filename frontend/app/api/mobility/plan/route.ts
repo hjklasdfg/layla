@@ -3,9 +3,11 @@ import { fetchBackendJourneyIntent } from "@/lib/agent/providers/backend";
 import type { UserPreference } from "@/lib/agent/types";
 import { requestBackendMobilityPlan } from "@/lib/mobility/backend-plan";
 import { buildTflJourneyPayload } from "@/lib/mobility/backend-plan-types";
+import { serverEnv } from "@/lib/config/env";
 import type { CameraDataItem, GpsLocation } from "@/lib/mobility/sensors";
 import { parseJourneyFromSpeech } from "@/lib/mobility/voice-intent";
 import { getJourneys } from "@/services/tfl/journey";
+import { resolveJourneyEndpoints } from "@/services/tfl/resolveLocation";
 import { isTfLConfigured } from "@/services/tfl/client";
 import { TflApiError } from "@/services/tfl/types";
 
@@ -73,16 +75,26 @@ export async function POST(request: Request) {
       );
     }
 
+    const endpoints = await resolveJourneyEndpoints(journey.start, journey.destination);
+
     let tflCandidates: Awaited<ReturnType<typeof getJourneys>> = [];
     try {
-      tflCandidates = await getJourneys(journey.start, journey.destination);
+      tflCandidates = await getJourneys(journey.start, journey.destination, {
+        fromSegment: endpoints.from.segment,
+        toSegment: endpoints.to.segment,
+      });
     } catch {
-      tflCandidates = []; // backend routes independently of TfL — don't block on TfL
+      tflCandidates = [];
     }
-    // Only hard-fail when there is no backend that can route without TfL candidates.
-    if (!tflCandidates.length && !process.env.BACKEND_API_URL?.trim()) {
+
+    if (!tflCandidates.length && !serverEnv.backend.enabled) {
       return NextResponse.json({ error: "No TfL journeys found." }, { status: 404 });
     }
+
+    const journeyAnchors = {
+      start: endpoints.from.point,
+      end: endpoints.to.point,
+    };
 
     const plan = await requestBackendMobilityPlan({
       audioInput: body.audioInput,
@@ -90,6 +102,7 @@ export async function POST(request: Request) {
       cameraData: body.cameraData ?? [],
       preference: body.preference,
       journey,
+      journeyAnchors,
       tflJourney: buildTflJourneyPayload(
         journey.start,
         journey.destination,
@@ -97,7 +110,14 @@ export async function POST(request: Request) {
       ),
     });
 
-    return NextResponse.json(plan);
+    return NextResponse.json({
+      ...plan,
+      meta: {
+        ...plan.meta,
+        ...(endpoints.from.point ? { startPoint: endpoints.from.point } : {}),
+        ...(endpoints.to.point ? { endPoint: endpoints.to.point } : {}),
+      },
+    });
   } catch (err) {
     if (err instanceof TflApiError) {
       const status =
