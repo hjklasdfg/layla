@@ -103,8 +103,8 @@ export default function Home() {
     clearError,
   } = useLiveRoutes();
 
-  const [start, setStart] = useState("");
-  const [destination, setDestination] = useState("");
+  const [start, setStart] = useState("King's Cross Station");
+  const [destination, setDestination] = useState("British Museum");
   const [profile, setProfile] = useState<UserPreference["profile"]>("general");
   const [priority, setPriority] =
     useState<UserPreference["priority"]>("most_accessible");
