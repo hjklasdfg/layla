@@ -94,16 +94,27 @@ Run in this order:
 # 2. Open WebUI
 ./dgx/open-webui.sh
 
-# 3. Frontend (in frontend/)
-bun dev
-
-# 4. Caddy proxy
+# 3. Caddy proxy
 ./cloudflare/caddy.sh
 
-# 5. Named tunnel (in tmux — survives SSH disconnects)
-tmux new -s tunnel
-./cloudflare/run-named-tunnel.sh
-# Ctrl+B, D  →  detach
+# 4. Frontend — in tmux so it survives SSH disconnects
+tmux new-session -s frontend -d 'cd frontend && bun dev'
+
+# 5. Named tunnel — in tmux
+tmux new-session -s tunnel -d './cloudflare/run-named-tunnel.sh'
+```
+
+Check both are running:
+```bash
+tmux ls
+# frontend: 1 windows
+# tunnel:   1 windows
+```
+
+Attach to inspect / tail logs:
+```bash
+tmux attach -t frontend   # Ctrl+B, D to detach
+tmux attach -t tunnel     # Ctrl+B, D to detach
 ```
 
 The URL is always `https://layla.ai-cloud.io` — no `.env` updates needed after restart.
