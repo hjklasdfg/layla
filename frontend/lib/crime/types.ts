@@ -1,16 +1,18 @@
 export interface CrimeIncident {
-  id: string;
-  category: string;
-  lat: number;
-  lng: number;
+  crimeId: string;
   month: string;
+  latitude: number;
+  longitude: number;
   location: string;
+  crimeType: string;
+  outcome: string;
 }
 
 export interface CrimeIncidentMeta {
-  count: number;
-  area: string;
-  month: string;
+  sourceFile: string;
+  totalRows: number;
+  mappedCount: number;
+  unmappedCount: number;
 }
 
 export interface CrimeIncidentResponse {

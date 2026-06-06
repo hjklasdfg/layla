@@ -5,21 +5,27 @@ export interface AccessibilitySignals {
   stress: number;
   reliability: number;
   predictability: number;
-  crowdingRisk: number;
+  crowding: number;
+  crossingComplexity: number;
+}
+
+export interface RouteEvidence {
+  tfl: string[];
+  osm: string[];
+  cv: string[];
 }
 
 export interface EnrichedRoute {
   routeId: string;
+  name: string;
   etaMin: number;
-  modes: string[];
-  disruptions: string[];
-  instructions: string[];
-  steps: JourneyStep[];
   signals: AccessibilitySignals;
-  overallScore: number;
-  evidence: {
-    tfl: string[];
-    osm: string[];
-    cv: string[];
-  };
+  evidence: RouteEvidence;
+  risks: string[];
+  strengths: string[];
+  steps?: JourneyStep[];
+  transferCount?: number;
+  walkingMinutes?: number;
+  additionalWaitMin?: number;
+  plannedEtaMin?: number;
 }

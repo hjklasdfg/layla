@@ -1,54 +1,96 @@
-import type { CrimeIncident, CrimeIncidentMeta, CrimeIncidentResponse } from "./types";
+import type { CrimeIncidentResponse } from "./types";
+
+function parseCsvLine(line: string): string[] {
+  const fields: string[] = [];
+  let current = "";
+  let inQuotes = false;
+
+  for (let i = 0; i < line.length; i += 1) {
+    const char = line[i];
+    if (char === '"') {
+      if (inQuotes && line[i + 1] === '"') {
+        current += '"';
+        i += 1;
+      } else {
+        inQuotes = !inQuotes;
+      }
+      continue;
+    }
+    if (char === "," && !inQuotes) {
+      fields.push(current);
+      current = "";
+      continue;
+    }
+    current += char;
+  }
+  fields.push(current);
+  return fields;
+}
 
 export function parseCrimeIncidentCsv(
   csv: string,
   sourceFile: string
 ): CrimeIncidentResponse {
-  const lines = csv.split("\n").filter(Boolean);
-  if (lines.length < 2) {
-    return { incidents: [], meta: { count: 0, area: sourceFile, month: "" } };
+  const lines = csv.split(/\r?\n/).filter((line) => line.trim().length > 0);
+  if (lines.length <= 1) {
+    return {
+      incidents: [],
+      meta: {
+        sourceFile,
+        totalRows: 0,
+        mappedCount: 0,
+        unmappedCount: 0,
+      },
+    };
   }
 
-  const headers = lines[0].split(",").map((h) => h.trim().replace(/^"|"$/g, ""));
-  const idxOf = (name: string) =>
-    headers.findIndex((h) => h.toLowerCase() === name.toLowerCase());
+  const header = parseCsvLine(lines[0]);
+  const indexOf = (name: string) =>
+    header.findIndex((col) => col.toLowerCase() === name.toLowerCase());
 
-  const iCrimeId = idxOf("Crime ID");
-  const iMonth = idxOf("Month");
-  const iLon = idxOf("Longitude");
-  const iLat = idxOf("Latitude");
-  const iLocation = idxOf("Location");
-  const iCrimeType = idxOf("Crime type");
-  const iOutcome = idxOf("Last outcome category");
+  const idx = {
+    crimeId: indexOf("Crime ID"),
+    month: indexOf("Month"),
+    longitude: indexOf("Longitude"),
+    latitude: indexOf("Latitude"),
+    location: indexOf("Location"),
+    crimeType: indexOf("Crime type"),
+    outcome: indexOf("Last outcome category"),
+  };
 
-  const incidents: CrimeIncident[] = [];
-  let month = "";
+  const incidents = [];
+  let mappedCount = 0;
+  let unmappedCount = 0;
 
-  for (let i = 1; i < lines.length; i++) {
-    const cols = lines[i].split(",");
-    const rowMonth = cols[iMonth]?.trim() ?? "";
-    if (rowMonth && !month) month = rowMonth;
+  for (const line of lines.slice(1)) {
+    const cols = parseCsvLine(line);
+    const lat = parseFloat(cols[idx.latitude] ?? "");
+    const lng = parseFloat(cols[idx.longitude] ?? "");
 
-    const lat = parseFloat(cols[iLat] ?? "");
-    const lng = parseFloat(cols[iLon] ?? "");
-    if (Number.isNaN(lat) || Number.isNaN(lng)) continue;
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+      unmappedCount += 1;
+      continue;
+    }
 
+    mappedCount += 1;
     incidents.push({
-      id: cols[iCrimeId]?.trim() ?? String(i),
-      category: cols[iCrimeType]?.trim() ?? "Unknown",
-      lat,
-      lng,
-      month: rowMonth,
-      location: cols[iLocation]?.trim() ?? "",
+      crimeId: cols[idx.crimeId] ?? "",
+      month: cols[idx.month] ?? "",
+      latitude: lat,
+      longitude: lng,
+      location: cols[idx.location] ?? "Unknown location",
+      crimeType: cols[idx.crimeType] ?? "Other crime",
+      outcome: cols[idx.outcome] ?? "Unknown",
     });
   }
 
   return {
     incidents,
     meta: {
-      count: incidents.length,
-      area: sourceFile,
-      month,
+      sourceFile,
+      totalRows: lines.length - 1,
+      mappedCount,
+      unmappedCount,
     },
   };
 }

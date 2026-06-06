@@ -1,40 +1,58 @@
+import "server-only";
+
+function readEnv(key: string): string {
+  return process.env[key]?.trim() ?? "";
+}
+
 export const serverEnv = {
   tfl: {
-    appKey: process.env.TFL_APP_KEY ?? "",
-    appId: process.env.TFL_APP_ID ?? "",
+    appKey: readEnv("TFL_APP_KEY"),
+    appId: readEnv("TFL_APP_ID"),
     get enabled() {
       return Boolean(this.appKey);
     },
   },
+  osm: {
+    userAgent: readEnv("OSM_USER_AGENT") || "Layla/0.1 (accessibility mobility)",
+  },
   gemini: {
-    apiKey: process.env.GEMINI_API_KEY ?? "",
-    model: process.env.GEMINI_MODEL ?? "gemini-2.0-flash",
+    apiKey: readEnv("GEMINI_API_KEY"),
+    model: readEnv("GEMINI_MODEL") || "gemini-2.0-flash",
     get enabled() {
       return Boolean(this.apiKey);
     },
   },
-  llmProvider: process.env.LLM_PROVIDER ?? "gemini",
-  nemoclaw: {
-    inferenceUrl:
-      process.env.NEMOCLAW_INFERENCE_URL ?? "http://localhost:18789/v1",
-    apiKey: process.env.NEMOCLAW_API_KEY ?? "",
+  nemotron: {
+    baseUrl:
+      readEnv("NEMOTRON_BASE_URL") ||
+      "https://theory-refresh-soma-provisions.trycloudflare.com",
     model:
-      process.env.NEMOCLAW_MODEL ?? "nvidia/nemotron-3-super-120b-a12b",
+      readEnv("NEMOTRON_MODEL") ||
+      "nvidia/Nemotron-3-Nano-Omni-30B-A3B-Reasoning-NVFP4",
+    apiKey: readEnv("NEMOTRON_API_KEY"),
     get enabled() {
-      return Boolean(this.apiKey);
+      return Boolean(this.baseUrl);
+    },
+  },
+  llmProvider: readEnv("LLM_PROVIDER") || "nemotron",
+  backend: {
+    apiUrl: readEnv("BACKEND_API_URL"),
+    apiKey: readEnv("BACKEND_API_KEY"),
+    get enabled() {
+      return Boolean(this.apiUrl);
     },
   },
   elevenlabs: {
-    apiKey: process.env.ELEVENLABS_API_KEY ?? "",
-    agentId: process.env.NEXT_PUBLIC_ELEVENLABS_AGENT_ID ?? "",
+    apiKey: readEnv("ELEVENLABS_API_KEY"),
+    agentId: readEnv("NEXT_PUBLIC_ELEVENLABS_AGENT_ID"),
+    get sttEnabled() {
+      return Boolean(this.apiKey);
+    },
     get enabled() {
       return Boolean(this.apiKey && this.agentId);
     },
   },
-  get voiceMemoryDir() {
-    return process.env.VOICE_MEMORY_DIR ?? "./data/voice";
-  },
-};
+} as const;
 
 export function tflQueryParams(): string {
   const params = new URLSearchParams();
@@ -43,3 +61,12 @@ export function tflQueryParams(): string {
   const qs = params.toString();
   return qs ? `?${qs}` : "";
 }
+
+export const publicEnv = {
+  llmProvider: readEnv("NEXT_PUBLIC_LLM_PROVIDER") || "nemotron",
+  elevenlabsAgentId: readEnv("NEXT_PUBLIC_ELEVENLABS_AGENT_ID"),
+  /** Voice input via ElevenLabs Scribe (set true when ELEVENLABS_API_KEY is configured). */
+  voiceEnabled:
+    readEnv("NEXT_PUBLIC_VOICE_ENABLED") === "true" ||
+    Boolean(readEnv("NEXT_PUBLIC_ELEVENLABS_AGENT_ID")),
+} as const;

@@ -6,11 +6,12 @@
 | **Version** | 0.1.0 |
 | **Owner** | Team Layla — Data (Linyi Li) |
 | **Status** | Hackathon build (City-of-London corridor) |
-| **Summary** | Locally-ingested City-of-London open data, fused on-device, exposed as data tools for an accessibility-aware mobility agent. Provides a fused OSM walkable graph + crime/noise/air/accessibility + live TfL. Routing is out of scope. |
-| **Executable** | `layla_data_skill.py` (pure-Python; JSON I/O) |
+| **Summary** | Locally-ingested City-of-London open data, fused on-device, exposed as tools for an accessibility-aware mobility agent. Provides a fused OSM walkable graph + crime/noise/air/accessibility + live TfL, AND scored, map-ready accessible routing (Approach A: per-persona weighted graph search → different geometry per profile). |
+| **Executable** | `layla_data_skill.py` (data tools) + `route_scoring.py` / `route_engine.py` (scored routing); pure-Python, JSON I/O |
 
 ## Capabilities
-- `get_walkable_graph`, `get_context`, `get_accessibility`, `get_crime`, `get_noise`, `get_air`, `get_live_disruptions`, `get_crowding`, `get_line_status`, `get_road_disruptions`
+- **Routing:** `get_scored_routes` (map-ready, scored, per-persona)
+- **Data:** `get_walkable_graph`, `get_context`, `get_accessibility`, `get_crime`, `get_noise`, `get_air`, `get_live_disruptions`, `get_crowding`, `get_line_status`, `get_road_disruptions`
 
 ## Data sources & licenses
 | Layer | Source | Licence |

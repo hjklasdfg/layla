@@ -1,79 +1,82 @@
 import "server-only";
 
-import type { MobilityAgentContext, MobilityRecommendation } from "./types";
+import { rankRoutes } from "@/lib/recommendation";
 import { serverEnv } from "@/lib/config/env";
+import { BackendProvider } from "./providers/backend";
+import { GeminiProvider } from "./providers/gemini";
+import {
+  formatRouteSummary,
+  PRIORITY_LABELS,
+  PROFILE_LABELS,
+  type AgentProvider,
+  type MobilityAgentContext,
+  type MobilityRecommendation,
+} from "./types";
 
-function buildSystemPrompt(): string {
-  return `You are a mobility route recommendation engine for TongSense.
-Given route options and user preferences, select the best route.
-Return ONLY valid JSON:
-{"recommendedRouteId":"<id>","reason":"<one sentence>","warnings":["<optional>"]}`;
+class MockAgentProvider implements AgentProvider {
+  async recommend(context: MobilityAgentContext): Promise<MobilityRecommendation> {
+    const ranked = rankRoutes(context.routes, context.preference);
+    const recommendedRouteId = ranked[0] ?? context.routes[0]?.routeId ?? "A";
+    const recommended =
+      context.routes.find((route) => route.routeId === recommendedRouteId) ??
+      context.routes[0];
+
+    if (!recommended) {
+      throw new Error("No routes available for recommendation");
+    }
+
+    const others = context.routes.filter(
+      (route) => route.routeId !== recommended.routeId
+    );
+
+    const routeComparison =
+      [recommended, ...others]
+        .map((route) => `- ${formatRouteSummary(route)}`)
+        .join("\n") ||
+      `Route ${recommended.routeId} is the only option.`;
+
+    const tradeoffExplanation =
+      `For **${PROFILE_LABELS[context.preference.profile]}** travellers prioritising **${PRIORITY_LABELS[context.preference.priority]}**, ` +
+      `Route **${recommended.routeId}** balances ETA (${recommended.etaMin} min) with accessibility (${recommended.signals.accessibility}/100) ` +
+      `and stress (${recommended.signals.stress}/100).`;
+
+    const finalRecommendation =
+      `Take **Route ${recommended.routeId}** — ${recommended.etaMin} min with accessibility score **${recommended.signals.accessibility}/100**.`;
+
+    return {
+      provider: "mock",
+      recommendedRouteId: recommended.routeId,
+      routeComparison,
+      tradeoffExplanation,
+      finalRecommendation,
+    };
+  }
 }
 
-function buildUserPrompt(ctx: MobilityAgentContext): string {
-  const routeSummaries = ctx.routes
-    .map((r) => {
-      const signals = r.signals;
-      return `Route ${r.routeId}: ETA ${r.etaMin}min, accessibility=${signals.accessibility}, stress=${signals.stress}, modes=${r.modes.join("+")}`;
-    })
-    .join("\n");
-
-  return `Profile: ${ctx.preference.profile}
-Priority: ${ctx.preference.priority}${ctx.preference.customNotes ? `\nCustom notes: ${ctx.preference.customNotes}` : ""}
-Journey: ${ctx.journey.start} → ${ctx.journey.destination}
-
-${routeSummaries}`;
+function resolveProvider(): AgentProvider {
+  const provider = serverEnv.llmProvider.toLowerCase();
+  if (provider === "mock") {
+    return new MockAgentProvider();
+  }
+  if (provider === "backend") {
+    if (!serverEnv.backend.enabled) {
+      return new MockAgentProvider();
+    }
+    return new BackendProvider();
+  }
+  if (provider === "gemini") {
+    return new GeminiProvider();
+  }
+  return new BackendProvider();
 }
 
 export async function generateMobilityRecommendationServer(
-  ctx: MobilityAgentContext
+  context: MobilityAgentContext
 ): Promise<MobilityRecommendation> {
-  if (!serverEnv.gemini.enabled) {
-    const sorted = [...ctx.routes].sort(
-      (a, b) => b.signals.accessibility - a.signals.accessibility
-    );
-    const best = sorted[0];
-    return {
-      recommendedRouteId: best?.routeId ?? ctx.routes[0]?.routeId ?? "A",
-      reason: "Highest accessibility score",
-      warnings: [],
-    };
+  if (!context.routes.length) {
+    throw new Error("At least one route is required");
   }
 
-  const res = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${serverEnv.gemini.model}:generateContent?key=${serverEnv.gemini.apiKey}`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        contents: [
-          {
-            parts: [
-              { text: buildSystemPrompt() },
-              { text: buildUserPrompt(ctx) },
-            ],
-          },
-        ],
-        generationConfig: { temperature: 0.3, maxOutputTokens: 256 },
-      }),
-    }
-  );
-
-  if (!res.ok) {
-    throw new Error(`Gemini error: ${res.status}`);
-  }
-
-  const data = (await res.json()) as {
-    candidates?: Array<{
-      content?: { parts?: Array<{ text?: string }> };
-    }>;
-  };
-
-  const raw = data.candidates?.[0]?.content?.parts?.[0]?.text ?? "{}";
-  const jsonMatch = raw.match(/\{[\s\S]*\}/);
-  if (!jsonMatch) {
-    throw new Error("Gemini returned non-JSON response");
-  }
-
-  return JSON.parse(jsonMatch[0]) as MobilityRecommendation;
+  const agent = resolveProvider();
+  return agent.recommend(context);
 }

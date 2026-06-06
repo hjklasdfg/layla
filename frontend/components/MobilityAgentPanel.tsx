@@ -1,13 +1,16 @@
 "use client";
 
 import type { ReactNode } from "react";
-import type { MobilityRecommendation } from "@/lib/agent";
+import type { MobilityRecommendation } from "@/lib/agent/types";
+import type { RouteExplanation } from "@/lib/mobility/plan";
 
 interface MobilityAgentPanelProps {
   recommendation: MobilityRecommendation | null;
+  explanation?: RouteExplanation | null;
   loading: boolean;
   journeyLabel?: string;
   recommendationUpdated?: boolean;
+  onReplayVoice?: () => void;
 }
 
 function AgentSection({
@@ -32,8 +35,7 @@ function AgentSection({
   );
 }
 
-function renderMarkdownBold(text: string | undefined | null) {
-  if (!text) return null;
+function renderMarkdownBold(text: string) {
   const parts = text.split(/\*\*(.*?)\*\*/g);
   return parts.map((part, i) =>
     i % 2 === 1 ? (
@@ -58,25 +60,28 @@ function ThinkingIndicator() {
           />
         ))}
       </div>
-      <span className="text-sm text-slate-500">Analysing routes…</span>
+      <span className="text-sm text-slate-500">Planning route…</span>
     </div>
   );
 }
 
-type AnyRec = MobilityRecommendation & { provider?: string; routeComparison?: string; tradeoffExplanation?: string; finalRecommendation?: string };
-const PROVIDER_LABELS: Record<string, string> = {
+const PROVIDER_LABELS: Record<MobilityRecommendation["provider"], string> = {
   mock: "Mock Agent",
   openai: "OpenAI",
   claude: "Claude",
   gemini: "Gemini",
+  nemotron: "Nemotron",
   ollama: "Ollama",
+  backend: "Backend",
 };
 
 export function MobilityAgentPanel({
   recommendation,
+  explanation,
   loading,
   journeyLabel,
   recommendationUpdated,
+  onReplayVoice,
 }: MobilityAgentPanelProps) {
   return (
     <div className="overflow-hidden rounded-2xl border border-slate-700/50 bg-[#0c1017] shadow-xl shadow-black/20">
@@ -99,9 +104,9 @@ export function MobilityAgentPanel({
             </p>
           </div>
         </div>
-        {recommendation && !loading && (recommendation as AnyRec).provider && (
+        {recommendation && !loading && (
           <span className="rounded-full border border-slate-700/60 bg-slate-800/50 px-2.5 py-0.5 font-mono text-[10px] text-slate-500">
-            {PROVIDER_LABELS[(recommendation as AnyRec).provider!] ?? (recommendation as AnyRec).provider}
+            {PROVIDER_LABELS[recommendation.provider]}
           </span>
         )}
       </div>
@@ -111,37 +116,58 @@ export function MobilityAgentPanel({
 
         {!loading && recommendation && (
           <>
-            {(recommendation as AnyRec).routeComparison && (
+            {explanation && (
               <>
                 <AgentSection
-                  title="Route comparison"
+                  title="Why this route?"
                   icon={
                     <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor">
-                      <path d="M2 3h8v1H2V3zm0 2.5h5v1H2v-1zm0 2.5h6v1H2v-1z" />
+                      <path d="M6 0a6 6 0 100 12A6 6 0 006 0zm0 2.5a.9.9 0 110 1.8.9.9 0 010-1.8zM5.2 5h1.6v5H5.2V5z" />
                     </svg>
                   }
                 >
-                  <p>{renderMarkdownBold((recommendation as AnyRec).routeComparison)}</p>
+                  <p className="rounded-lg border border-cyan-500/20 bg-cyan-950/20 px-3 py-2.5 text-slate-300">
+                    {renderMarkdownBold(explanation.uiText)}
+                  </p>
+                  {onReplayVoice && (
+                    <button
+                      type="button"
+                      onClick={onReplayVoice}
+                      className="mt-2 text-[11px] font-medium text-cyan-400 hover:text-cyan-300"
+                    >
+                      🔊 Ask voice guide again
+                    </button>
+                  )}
                 </AgentSection>
                 <div className="h-px bg-slate-800/80" />
               </>
             )}
 
-            {(recommendation as AnyRec).tradeoffExplanation && (
-              <>
-                <AgentSection
-                  title="Trade-offs"
-                  icon={
-                    <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor">
-                      <path d="M6 1L10 6H7v5H5V6H2L6 1z" />
-                    </svg>
-                  }
-                >
-                  <p>{renderMarkdownBold((recommendation as AnyRec).tradeoffExplanation)}</p>
-                </AgentSection>
-                <div className="h-px bg-slate-800/80" />
-              </>
-            )}
+            <AgentSection
+              title="Route comparison"
+              icon={
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor">
+                  <path d="M2 3h8v1H2V3zm0 2.5h5v1H2v-1zm0 2.5h6v1H2v-1z" />
+                </svg>
+              }
+            >
+              <p>{renderMarkdownBold(recommendation.routeComparison)}</p>
+            </AgentSection>
+
+            <div className="h-px bg-slate-800/80" />
+
+            <AgentSection
+              title="Trade-offs"
+              icon={
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor">
+                  <path d="M6 1L10 6H7v5H5V6H2L6 1z" />
+                </svg>
+              }
+            >
+              <p>{renderMarkdownBold(recommendation.tradeoffExplanation)}</p>
+            </AgentSection>
+
+            <div className="h-px bg-slate-800/80" />
 
             <AgentSection
               title="Recommendation"
@@ -152,17 +178,9 @@ export function MobilityAgentPanel({
               }
             >
               <p className="rounded-lg border border-teal-500/20 bg-teal-950/20 px-3 py-2.5 text-slate-300">
-                {renderMarkdownBold((recommendation as AnyRec).finalRecommendation ?? recommendation.reason)}
+                {renderMarkdownBold(recommendation.finalRecommendation)}
               </p>
             </AgentSection>
-
-            {(recommendation.warnings ?? []).length > 0 && (
-              <ul className="space-y-1 pl-1 text-xs text-amber-400/80">
-                {(recommendation.warnings ?? []).map((w) => (
-                  <li key={w}>⚠ {w}</li>
-                ))}
-              </ul>
-            )}
 
             <div className="flex items-center gap-2 pt-1">
               <span className="inline-flex items-center gap-1 rounded-md bg-slate-800/60 px-2 py-1 text-[10px] text-slate-500">
