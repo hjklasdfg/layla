@@ -223,7 +223,7 @@ export function RouteMap({
   const hasCrimeLayer = crimeLocations.length > 0;
 
   const bounds = useMemo((): L.LatLngBoundsExpression | null => {
-    const routeCoords = routes.flatMap((r) => r.geometry.coordinates);
+    const routeCoords = routes.flatMap((r) => r.geometry?.coordinates ?? []);
     const crimeCoords = crimeLocations.map(
       (incident) => [incident.latitude, incident.longitude] as [number, number]
     );
@@ -235,7 +235,7 @@ export function RouteMap({
 
   const mapCenter = useMemo((): [number, number] => {
     if (start) return [start.lat, start.lng];
-    const first = routes[0]?.geometry.coordinates[0];
+    const first = routes[0]?.geometry?.coordinates[0];
     if (first) return first;
     const firstCrime = crimeLocations[0];
     if (firstCrime) return [firstCrime.latitude, firstCrime.longitude];
@@ -348,7 +348,7 @@ export function RouteMap({
             return (
               <Polyline
                 key={route.id}
-                positions={route.geometry.coordinates}
+                positions={route.geometry?.coordinates ?? []}
                 pathOptions={{
                   color,
                   weight: isSelected ? 6 : 3,

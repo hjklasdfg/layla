@@ -103,7 +103,7 @@ export function AccessibilityLayer({
   );
   const allRisk = dedupeFeatures(
     routes.flatMap((r) => [
-      ...r.riskyFeatures,
+      ...(r.riskyFeatures ?? []),
       ...(r.osmContext?.mapFeatures.riskPoints ?? []),
     ])
   );
