@@ -362,8 +362,26 @@ export default function Home() {
     const regex = parseVoiceIntent(text);
     const profilePick = ai?.profile ?? regex.profile;
     const priorityPick = ai?.priority;
-    const start = ai?.start || regex.journey.start;
+    const rawStart = ai?.start || regex.journey.start;
     const destination = ai?.destination || regex.journey.destination;
+
+    // "from my current location / here" -> the device's GPS coordinates
+    let start = rawStart;
+    let displayStart = rawStart;
+    if (
+      rawStart &&
+      /current location|my location|where i am|from here|near me|my position/i.test(rawStart)
+    ) {
+      if (gpsLocation) {
+        start = `${gpsLocation.latitude.toFixed(6)},${gpsLocation.longitude.toFixed(6)}`;
+        displayStart = "your location";
+      } else {
+        voiceRef.current?.notifyPlanningFailed(
+          "I couldn't get your location — enable location access and try again."
+        );
+        return;
+      }
+    }
 
     if (profilePick) setProfile(profilePick);
     if (priorityPick) setPriority(priorityPick);
@@ -378,7 +396,7 @@ export default function Home() {
 
     if (planningInFlightRef.current) return;
 
-    voiceRef.current?.notifySpeechReceived(text, { start, destination });
+    voiceRef.current?.notifySpeechReceived(text, { start: displayStart, destination });
 
     void runPlan({
       audioInput: text,
@@ -511,7 +529,28 @@ export default function Home() {
               </h2>
               <div className="space-y-4">
                 <label className="block">
-                  <span className="mb-1.5 block text-xs text-slate-400">From</span>
+                  <div className="mb-1.5 flex items-center justify-between">
+                    <span className="text-xs text-slate-400">From</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (gpsLocation) {
+                          setStart(
+                            `${gpsLocation.latitude.toFixed(6)},${gpsLocation.longitude.toFixed(6)}`
+                          );
+                        }
+                      }}
+                      disabled={!gpsLocation}
+                      title={
+                        gpsLocation
+                          ? "Use your current GPS location"
+                          : "Location unavailable (needs GPS + HTTPS)"
+                      }
+                      className="text-[11px] font-medium text-cyan-400 transition hover:text-cyan-300 disabled:cursor-not-allowed disabled:text-slate-600"
+                    >
+                      📍 Use my location
+                    </button>
+                  </div>
                   <input
                     type="text"
                     value={start}

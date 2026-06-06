@@ -19,7 +19,9 @@ const SYSTEM =
   "wheelchair user->wheelchair; blind/low-vision->blind; elderly/older->elderly; " +
   "worried about safety or at night->night_safety; otherwise general. " +
   "quick/fast->fastest; safe/avoid crime->most_reliable; calm/quiet/less stressful->least_stressful; " +
-  "otherwise most_accessible. Copy place names exactly from the request.";
+  "otherwise most_accessible. Copy place names exactly from the request. " +
+  'If the start is the speaker\'s current location ("from here", "my current location", ' +
+  '"where I am", "from my location", "near me"), set start to exactly "current location".';
 
 export async function POST(request: Request) {
   let text = "";
