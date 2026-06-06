@@ -32,6 +32,8 @@ const DEFAULT_LAYERS: MapLayerVisibility = {
   crossings: true,
   steps: true,
   tactilePaving: true,
+  noise: false,
+  lighting: false,
   riskPoints: true,
   crimeIncidents: true,
 };
@@ -292,6 +294,18 @@ export function RouteMap({
           checked={layers.tactilePaving}
           onChange={(v) => setLayers((p) => ({ ...p, tactilePaving: v }))}
           colorClass="bg-green-400"
+        />
+        <LayerToggle
+          label="Noise"
+          checked={layers.noise}
+          onChange={(v) => setLayers((p) => ({ ...p, noise: v }))}
+          colorClass="bg-orange-400"
+        />
+        <LayerToggle
+          label="Lighting"
+          checked={layers.lighting}
+          onChange={(v) => setLayers((p) => ({ ...p, lighting: v }))}
+          colorClass="bg-indigo-400"
         />
         <LayerToggle
           label="Risk"

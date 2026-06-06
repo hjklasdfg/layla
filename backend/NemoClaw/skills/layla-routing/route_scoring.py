@@ -185,13 +185,17 @@ def _map_features(path_nc, step_pts):
 def _build_route(g, path, profile, rid, variant, o, d):
     nc, cache = g["node_coord"], g["cache"]
     dist = steps = dark = incl = crime = 0.0
-    noise_vals = []; step_pts = []
+    noise_vals = []; step_pts = []; unlit_pts = []; noisy_pts = []
     for i in range(len(path) - 1):
         rec = cache[tuple(sorted((path[i], path[i + 1])))]
         dist += rec["L"]; steps += rec["steps"]; dark += rec["darkness"]
         incl += rec["incline"]; crime += rec["crime"]; noise_vals.append(rec["noise"])
         if rec["steps"]:
-            c = nc[path[i]]; step_pts.append(c)
+            step_pts.append(nc[path[i]])
+        if rec["darkness"]:
+            unlit_pts.append(nc[path[i]])
+        if rec["noise"] >= 0.6:
+            noisy_pts.append(nc[path[i]])
     n_edges = max(1, len(path) - 1)
     noise_avg = sum(noise_vals) / len(noise_vals) if noise_vals else 0.0
     crime_avg = crime / n_edges
@@ -199,6 +203,10 @@ def _build_route(g, path, profile, rid, variant, o, d):
 
     path_nc = [nc[n] for n in path]                       # [lon,lat]
     mf = _map_features(path_nc, step_pts)
+    mf["unlit"] = [{"type": "unlit", "lat": p[1], "lng": p[0],
+                    "reason": "Unlit segment", "severity": "risk"} for p in unlit_pts][:30]
+    mf["noisy"] = [{"type": "noisy", "lat": p[1], "lng": p[0],
+                    "reason": "Noisy road", "severity": "caution"} for p in noisy_pts][:30]
     crossings_n = len(mf["crossings"]); tactile_n = len(mf["tactilePaving"])
 
     mid = path_nc[len(path_nc) // 2]
