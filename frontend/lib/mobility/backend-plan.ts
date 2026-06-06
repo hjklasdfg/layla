@@ -145,5 +145,47 @@ export async function requestBackendMobilityPlan(
     );
   }
 
+  // Add genuine TfL transit (tube/bus/...) routes alongside our accessibility
+  // walking routes. Only when the candidates actually use transit (cheap modes
+  // check) so pure-walk City trips don't pay for OSM enrichment.
+  const NON_TRANSIT = new Set(["walking", "foot", "pedestrian", "walk"]);
+  const isTransit = (m?: string) => Boolean(m && !NON_TRANSIT.has(m.toLowerCase()));
+  const hasTransit = request.tflJourney.candidates.some((c) =>
+    c.modes?.some(isTransit)
+  );
+  if (hasTransit) {
+    try {
+      const { routes: tflRoutes } = await buildMobilityRoutesFromCandidates(
+        request.tflJourney.candidates,
+        request.preference.profile
+      );
+      const walkBest = Math.min(
+        ...data.routes.map((r) => r.etaMin),
+        Number.POSITIVE_INFINITY
+      );
+      const seen = new Set<string>();
+      const transit = tflRoutes
+        .filter((r) => r.modes?.some(isTransit))
+        .filter((r) => r.etaMin <= walkBest) // only show transit if it beats walking
+        .filter((r) => {
+          const k = `${r.name}-${r.etaMin}`;
+          if (seen.has(k)) return false;
+          seen.add(k);
+          return true;
+        })
+        .slice(0, 2)
+        .map((r, i) => ({ ...r, id: String.fromCharCode(70 + i) })); // F, G
+      if (transit.length) {
+        data.routes = [...data.routes, ...transit];
+        data.enrichedRoutes = [
+          ...data.enrichedRoutes,
+          ...mobilityStatesToEnriched(transit),
+        ];
+      }
+    } catch {
+      // transit is best-effort; our walking routes are still returned
+    }
+  }
+
   return data;
 }

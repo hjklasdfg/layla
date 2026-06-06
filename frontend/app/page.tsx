@@ -28,6 +28,7 @@ import {
 } from "@/lib/mobility/voice-intent";
 import { useGeolocation } from "@/hooks/useGeolocation";
 import { useLiveRoutes } from "@/hooks/useLiveRoutes";
+import type { MobilityRouteState } from "@/lib/mobilityEngine";
 
 const RouteMap = dynamic(
   () => import("@/components/RouteMap").then((m) => m.RouteMap),
@@ -132,6 +133,9 @@ export default function Home() {
   );
   const [llmInput, setLlmInput] = useState<LlmPlanInput | null>(null);
   const [selectedRouteId, setSelectedRouteId] = useState<string | null>(null);
+  const [personaRoutes, setPersonaRoutes] = useState<MobilityRouteState[]>([]);
+  const [compareLoading, setCompareLoading] = useState(false);
+  const [compareError, setCompareError] = useState<string | null>(null);
   const [highContrastMap, setHighContrastMap] = useState(false);
   const [crimeIncidents, setCrimeIncidents] = useState<CrimeIncident[]>([]);
   const [crimeMeta, setCrimeMeta] = useState<CrimeIncidentMeta | null>(null);
@@ -270,13 +274,39 @@ export default function Home() {
 
   async function handleCompare() {
     if (!start.trim() || !destination.trim()) return;
-
+    setPersonaRoutes([]); // leave persona-overlay mode
+    setCompareError(null);
     await runPlan({
       journey: {
         start: start.trim(),
         destination: destination.trim(),
       },
     });
+  }
+
+  async function handleComparePersonas() {
+    if (!start.trim() || !destination.trim()) return;
+    setCompareLoading(true);
+    setCompareError(null);
+    try {
+      const res = await fetch("/api/mobility/compare", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          journey: { start: start.trim(), destination: destination.trim() },
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || data.error) {
+        throw new Error(data.error || `compare failed (${res.status})`);
+      }
+      setPersonaRoutes((data.routes as MobilityRouteState[]) ?? []);
+    } catch (e) {
+      setCompareError(e instanceof Error ? e.message : "Persona compare failed");
+      setPersonaRoutes([]);
+    } finally {
+      setCompareLoading(false);
+    }
   }
 
   async function handleVoiceInput(text: string) {
@@ -398,7 +428,7 @@ export default function Home() {
     "w-full rounded-lg border border-slate-700/80 bg-slate-900/80 px-3 py-2.5 text-sm text-white placeholder:text-slate-500 outline-none transition focus:border-cyan-500/60 focus:ring-1 focus:ring-cyan-500/30";
 
   const busy = agentLoading || isSearching || isSimulating;
-  const showMap = mobilityRoutes.length > 0;
+  const showMap = mobilityRoutes.length > 0 || personaRoutes.length > 0;
 
   return (
     <div className="min-h-screen">
@@ -538,6 +568,17 @@ export default function Home() {
                       ? "Analysing…"
                       : "Compare Routes"}
                 </button>
+                <button
+                  type="button"
+                  onClick={handleComparePersonas}
+                  disabled={!start.trim() || !destination.trim() || compareLoading}
+                  className="w-full rounded-lg border border-cyan-500/40 py-2.5 text-sm font-semibold text-cyan-300 transition hover:bg-cyan-500/10 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  {compareLoading ? "Comparing personas…" : "Compare personas"}
+                </button>
+                {compareError && (
+                  <p className="text-[11px] text-red-300">{compareError}</p>
+                )}
               </div>
             </div>
 
@@ -621,29 +662,14 @@ export default function Home() {
                   >
                     {highContrastMap ? "Standard map" : "High contrast"}
                   </button>
-                  <button
-                    type="button"
-                    onClick={handleCrimeMapToggle}
-                    disabled={crimeLoading}
-                    className="rounded-md border border-orange-400/40 bg-orange-500/10 px-2.5 py-1 text-[10px] font-medium uppercase tracking-wider text-orange-100 transition hover:border-orange-300/70 disabled:cursor-not-allowed disabled:opacity-50"
-                    aria-pressed={crimeLayerVisible}
-                  >
-                    {crimeLoading
-                      ? "Loading crime map…"
-                      : crimeLayerVisible
-                        ? "Hide crime map"
-                        : crimeIncidents.length > 0
-                          ? "Show crime map"
-                          : "Load crime map"}
-                  </button>
                 </div>
               )}
             </div>
 
             {showMap ? (
               <RouteMap
-                routes={mobilityRoutes}
-                selectedRouteId={highlightedRouteId}
+                routes={personaRoutes.length ? personaRoutes : mobilityRoutes}
+                selectedRouteId={personaRoutes.length ? null : highlightedRouteId}
                 onRouteSelect={setSelectedRouteId}
                 startLabel={start || journeyMarkers.start?.name || "Start"}
                 endLabel={destination || journeyMarkers.end?.name || "Destination"}

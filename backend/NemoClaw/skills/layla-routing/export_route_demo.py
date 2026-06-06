@@ -5,8 +5,9 @@ import route_scoring as rs
 
 ODS = {
     "Barbican → St Paul's": ("barbican", "st paul's"),
-    "Barbican → Bank": ("barbican", "bank"),
-    "Liverpool St → St Paul's": ("liverpool street", "st paul's"),
+    "Farringdon → Aldgate (cross-borough)": ("farringdon", "aldgate"),
+    "Liverpool St → Blackfriars": ("liverpool street", "blackfriars"),
+    "Barbican → Tower Hill": ("barbican", "tower hill"),
     "Farringdon → Bank": ("farringdon", "bank"),
 }
 PROFILES = ["general", "blind", "wheelchair", "elderly", "night_safety"]

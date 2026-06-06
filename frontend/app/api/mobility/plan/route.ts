@@ -3,6 +3,7 @@ import { fetchBackendJourneyIntent } from "@/lib/agent/providers/backend";
 import type { UserPreference } from "@/lib/agent/types";
 import { requestBackendMobilityPlan } from "@/lib/mobility/backend-plan";
 import { buildTflJourneyPayload } from "@/lib/mobility/backend-plan-types";
+import { serverEnv } from "@/lib/config/env";
 import type { CameraDataItem, GpsLocation } from "@/lib/mobility/sensors";
 import { parseJourneyFromSpeech } from "@/lib/mobility/voice-intent";
 import { getJourneys } from "@/services/tfl/journey";
@@ -76,12 +77,17 @@ export async function POST(request: Request) {
 
     const endpoints = await resolveJourneyEndpoints(journey.start, journey.destination);
 
-    const tflCandidates = await getJourneys(journey.start, journey.destination, {
-      fromSegment: endpoints.from.segment,
-      toSegment: endpoints.to.segment,
-    });
+    let tflCandidates: Awaited<ReturnType<typeof getJourneys>> = [];
+    try {
+      tflCandidates = await getJourneys(journey.start, journey.destination, {
+        fromSegment: endpoints.from.segment,
+        toSegment: endpoints.to.segment,
+      });
+    } catch {
+      tflCandidates = [];
+    }
 
-    if (!tflCandidates.length) {
+    if (!tflCandidates.length && !serverEnv.backend.enabled) {
       return NextResponse.json({ error: "No TfL journeys found." }, { status: 404 });
     }
 

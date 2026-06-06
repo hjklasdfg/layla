@@ -3,7 +3,7 @@ import path from "node:path";
 import { NextResponse } from "next/server";
 import { parseCrimeIncidentCsv } from "@/lib/crime/parse";
 
-const SOURCE_FILE = "open-data/2026-04-city-of-london-street.csv";
+const SOURCE_FILE = "../open-data/2026-06-04-city-of-london/2026-04-city-of-london-street.csv";
 
 export async function GET() {
   try {

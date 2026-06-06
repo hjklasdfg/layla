@@ -1,8 +1,9 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   CircleMarker,
+  GeoJSON,
   MapContainer,
   Popup,
   Polyline,
@@ -10,6 +11,7 @@ import {
   Tooltip,
 } from "react-leaflet";
 import L from "leaflet";
+import type { FeatureCollection } from "geojson";
 import type { CrimeIncident, CrimeIncidentMeta } from "@/lib/crime/types";
 import type { MobilityRouteState } from "@/lib/mobilityEngine";
 import {
@@ -25,6 +27,9 @@ const ROUTE_COLORS: Record<string, string> = {
   B: "#a78bfa",
   C: "#34d399",
   D: "#fb923c",
+  E: "#f472b6",
+  F: "#f59e0b",
+  G: "#14b8a6",
 };
 
 const DEFAULT_LAYERS: MapLayerVisibility = {
@@ -32,8 +37,10 @@ const DEFAULT_LAYERS: MapLayerVisibility = {
   crossings: true,
   steps: true,
   tactilePaving: true,
+  noise: false,
+  lighting: false,
   riskPoints: true,
-  crimeIncidents: true,
+  crimeIncidents: false,
 };
 
 const CRIME_TYPE_COLORS: Record<string, string> = {
@@ -201,6 +208,42 @@ function CrimeIncidentLayer({
   );
 }
 
+const NOISE_COLORS: Record<string, string> = {
+  "55.0-59.9": "#a6d96a",
+  "60.0-64.9": "#fee08b",
+  "65.0-69.9": "#fdae61",
+  "70.0-74.9": "#f46d43",
+  ">=75.0": "#d73027",
+};
+
+function NoiseLayer() {
+  const [data, setData] = useState<FeatureCollection | null>(null);
+  useEffect(() => {
+    let active = true;
+    fetch("/api/layers/noise")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (active && d?.features) setData(d as FeatureCollection);
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, []);
+  if (!data) return null;
+  return (
+    <GeoJSON
+      data={data}
+      style={(feature) => {
+        const band = (feature?.properties as { NoiseClass?: string } | undefined)
+          ?.NoiseClass;
+        const c = (band && NOISE_COLORS[band]) || "#9aa3b2";
+        return { color: c, weight: 0, fillColor: c, fillOpacity: 0.4 };
+      }}
+    />
+  );
+}
+
 export function RouteMap({
   routes,
   selectedRouteId,
@@ -232,10 +275,30 @@ export function RouteMap({
 
   const start = startPointProp ?? routeEndpoints.start;
   const end = endPointProp ?? routeEndpoints.end;
+
+  const [crimeData, setCrimeData] = useState<CrimeIncident[]>(crimeIncidents);
+  useEffect(() => {
+    setCrimeData(crimeIncidents);
+  }, [crimeIncidents]);
+
+  useEffect(() => {
+    if (!layers.crimeIncidents || crimeData.length) return;
+    let on = true;
+    fetch("/api/crime-incidents")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (on && d?.incidents) setCrimeData(d.incidents as CrimeIncident[]);
+      })
+      .catch(() => {});
+    return () => {
+      on = false;
+    };
+  }, [layers.crimeIncidents, crimeData.length]);
+
   const crimeLocations = useMemo(() => {
     const grouped = new Map<string, CrimeLocation>();
 
-    crimeIncidents.forEach((incident) => {
+    crimeData.forEach((incident) => {
       const key = `${incident.latitude.toFixed(6)}-${incident.longitude.toFixed(6)}`;
       const existing = grouped.get(key);
 
@@ -258,7 +321,7 @@ export function RouteMap({
     });
 
     return Array.from(grouped.values()).sort((a, b) => b.total - a.total);
-  }, [crimeIncidents]);
+  }, [crimeData]);
   const hasCrimeLayer = crimeLocations.length > 0;
 
   const bounds = useMemo((): L.LatLngBoundsExpression | null => {
@@ -337,19 +400,29 @@ export function RouteMap({
           colorClass="bg-green-400"
         />
         <LayerToggle
+          label="Noise"
+          checked={layers.noise}
+          onChange={(v) => setLayers((p) => ({ ...p, noise: v }))}
+          colorClass="bg-orange-400"
+        />
+        <LayerToggle
+          label="Lighting"
+          checked={layers.lighting}
+          onChange={(v) => setLayers((p) => ({ ...p, lighting: v }))}
+          colorClass="bg-indigo-400"
+        />
+        <LayerToggle
           label="Risk"
           checked={layers.riskPoints}
           onChange={(v) => setLayers((p) => ({ ...p, riskPoints: v }))}
           colorClass="bg-red-500"
         />
-        {hasCrimeLayer && (
-          <LayerToggle
-            label="Crime"
-            checked={layers.crimeIncidents}
-            onChange={(v) => setLayers((p) => ({ ...p, crimeIncidents: v }))}
-            colorClass="bg-orange-400"
-          />
-        )}
+        <LayerToggle
+          label="Crime"
+          checked={layers.crimeIncidents}
+          onChange={(v) => setLayers((p) => ({ ...p, crimeIncidents: v }))}
+          colorClass="bg-orange-400"
+        />
       </div>
 
       <MapContainer
@@ -364,6 +437,8 @@ export function RouteMap({
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
           url={tileUrl}
         />
+
+        {layers.noise && <NoiseLayer />}
 
         {bounds && <MapBoundsUpdater bounds={bounds} />}
 
@@ -405,7 +480,7 @@ export function RouteMap({
                 }}
               >
                 <Tooltip sticky className="!text-xs !font-semibold">
-                  Route {route.id} · {route.etaMin} min
+                  {route.name ?? `Route ${route.id}`} · {route.etaMin} min
                 </Tooltip>
               </Polyline>
             );
@@ -446,7 +521,7 @@ export function RouteMap({
                 className="h-2.5 w-6 rounded-full"
                 style={{ backgroundColor: color }}
               />
-              Route {route.id} · {route.etaMin} min
+              {route.name ?? `Route ${route.id}`} · {route.etaMin} min
             </button>
           );
         })}

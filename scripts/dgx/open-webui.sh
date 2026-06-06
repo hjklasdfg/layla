@@ -10,7 +10,17 @@ WEBUI_PORT="${4:-3001}"
 docker network create vllm-net 2>/dev/null || true
 docker rm -f "$CONTAINER" 2>/dev/null || true
 
-docker run -d   --name "$CONTAINER"   --network vllm-net   -p "${WEBUI_PORT}:8080"   -v open-webui-data:/app/backend/data   -e OPENAI_API_BASE_URLS="http://${VLLM_CONTAINER}:${VLLM_PORT}/v1"   -e OPENAI_API_KEY="dummy"   -e WEBUI_AUTH=False   -e ENABLE_OLLAMA_API=False   ghcr.io/open-webui/open-webui:main
+docker run -d \
+  --name "$CONTAINER" \
+  --restart unless-stopped \
+  --network vllm-net \
+  -p "${WEBUI_PORT}:8080" \
+  -v open-webui-data:/app/backend/data \
+  -e OPENAI_API_BASE_URLS="http://${VLLM_CONTAINER}:${VLLM_PORT}/v1" \
+  -e OPENAI_API_KEY="dummy" \
+  -e WEBUI_AUTH=False \
+  -e ENABLE_OLLAMA_API=False \
+  ghcr.io/open-webui/open-webui:main
 
 echo ""
 echo "Open WebUI starting → http://localhost:${WEBUI_PORT}"

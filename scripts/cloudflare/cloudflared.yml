@@ -1,0 +1,13 @@
+tunnel: 9b5204d7-c974-425a-a6b1-9d6a6aa64a03
+credentials-file: /home/nvidia/.cloudflared/9b5204d7-c974-425a-a6b1-9d6a6aa64a03.json
+
+ingress:
+  - hostname: layla.ai-cloud.io
+    service: http://localhost:80
+  - hostname: layla-oui.ai-cloud.io
+    service: http://localhost:8081
+  - hostname: dev.ai-cloud.io
+    service: http://localhost:3002
+  - hostname: "*.ai-cloud.io"
+    service: http://localhost:80
+  - service: http_status:404

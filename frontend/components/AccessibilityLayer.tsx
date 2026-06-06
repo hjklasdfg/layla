@@ -10,6 +10,8 @@ export interface MapLayerVisibility {
   crossings: boolean;
   steps: boolean;
   tactilePaving: boolean;
+  noise: boolean;
+  lighting: boolean;
   riskPoints: boolean;
   crimeIncidents: boolean;
 }
@@ -24,6 +26,8 @@ export interface AccessibilityLayerProps {
         steps: OSMRiskyFeature[];
         tactilePaving: OSMRiskyFeature[];
         riskPoints: OSMRiskyFeature[];
+        noisy?: OSMRiskyFeature[];
+        unlit?: OSMRiskyFeature[];
       };
     } | null;
   }>;
@@ -43,11 +47,13 @@ const SEVERITY_COLORS: Record<
 function FeatureMarker({
   feature,
   highContrast,
+  colorOverride,
 }: {
   feature: OSMRiskyFeature;
   highContrast?: boolean;
+  colorOverride?: { fill: string; stroke: string };
 }) {
-  const colors = SEVERITY_COLORS[feature.severity];
+  const colors = colorOverride ?? SEVERITY_COLORS[feature.severity];
   const radius = highContrast ? 10 : 8;
   const weight = highContrast ? 3 : 2;
 
@@ -107,6 +113,9 @@ export function AccessibilityLayer({
       ...(r.osmContext?.mapFeatures.riskPoints ?? []),
     ])
   );
+  const allLighting = dedupeFeatures(
+    routes.flatMap((r) => r.osmContext?.mapFeatures.unlit ?? [])
+  );
 
   return (
     <>
@@ -140,6 +149,15 @@ export function AccessibilityLayer({
             key={`risk-${f.lat}-${f.lng}-${f.type}`}
             feature={f}
             highContrast={highContrast}
+          />
+        ))}
+      {layers.lighting &&
+        allLighting.map((f) => (
+          <FeatureMarker
+            key={`light-${f.lat}-${f.lng}`}
+            feature={f}
+            highContrast={highContrast}
+            colorOverride={{ fill: "#6366f1", stroke: "#c7d2fe" }}
           />
         ))}
     </>
