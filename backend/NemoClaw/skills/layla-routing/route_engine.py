@@ -86,7 +86,8 @@ def _snap_bridges(adj, node_coord, tol=8.0, cell=0.0004):
 
 def _load_crime_grid(cell=0.002):
     grid = defaultdict(list); n = 0
-    geo = os.path.join(DATA_DIR, "crime_cityoflondon_points.geojson")
+    london = os.path.join(DATA_DIR, "crime_london_points.geojson")
+    geo = london if os.path.exists(london) else os.path.join(DATA_DIR, "crime_cityoflondon_points.geojson")
     legacy = os.path.join(DATA_DIR, "safety", "crime_cityoflondon.json")
     if os.path.exists(geo):                       # consolidated points (preferred)
         for f in json.load(open(geo)).get("features", []):

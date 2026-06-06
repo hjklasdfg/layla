@@ -76,6 +76,13 @@ PLACES = {
     "cannon street": (51.5113, -0.0904), "blackfriars": (51.5121, -0.1036),
     "monument": (51.5108, -0.0860), "fenchurch street": (51.5118, -0.0784),
     "holborn viaduct": (51.5170, -0.1040), "old street": (51.5256, -0.0877),
+    # central-London corridor (Triton Square <-> City)
+    "triton square": (51.5258, -0.1417), "regent's place": (51.5258, -0.1417),
+    "regents place": (51.5258, -0.1417), "warren street": (51.5247, -0.1384),
+    "euston": (51.5282, -0.1337), "euston square": (51.5259, -0.1357),
+    "king's cross": (51.5304, -0.1240), "kings cross": (51.5304, -0.1240),
+    "russell square": (51.5230, -0.1250), "angel": (51.5322, -0.1058),
+    "clerkenwell": (51.5230, -0.1050), "holborn": (51.5174, -0.1200),
 }
 
 _CLAMP = lambda v: int(max(0, min(100, round(v))))
