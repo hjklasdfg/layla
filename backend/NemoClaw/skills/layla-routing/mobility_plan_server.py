@@ -22,15 +22,17 @@ PROFILE_LABEL = {"general": "General", "blind": "Blind / low-vision", "wheelchai
 
 
 def _signals(r):
-    steps_n = len(r["mapFeatures"]["steps"]); cross_n = len(r["mapFeatures"]["crossings"])
+    # our 5 signals {accessibility,safety,quiet,lighting,air} -> frontend's 6 AccessibilitySignals
+    # slots (interim, until RouteCard shows our 5 directly). Surfaces crime + noise + lighting.
     s = r["signals"]
-    return {  # our {accessibility,safety,comfort} -> frontend AccessibilitySignals
+    cross_n = len(r["mapFeatures"]["crossings"])
+    return {
         "accessibility": s["accessibility"],
-        "stress": _clamp(100 - s["comfort"]),
-        "reliability": _clamp(85 - steps_n * 6),
-        "predictability": _clamp(82 - cross_n * 2),
-        "crowding": _clamp(100 - s["comfort"]),
-        "crossingComplexity": _clamp(cross_n * 12),
+        "stress": _clamp(100 - s["quiet"]),        # noisy -> stressful
+        "reliability": s["safety"],                 # crime-safety
+        "predictability": s["lighting"],            # lit -> see what's ahead
+        "crowding": _clamp(100 - s["quiet"]),       # proxy (no crowd data)
+        "crossingComplexity": _clamp(cross_n * 8),
     }
 
 def _state(r):
@@ -42,6 +44,7 @@ def _state(r):
         "etaMin": r["etaMin"], "geometry": r["geometry"],
         "start": r["start"], "end": r["end"],
         "signals": _signals(r),
+        "signals5": r["signals"],                  # our clean 5 signals (for the updated RouteCard)
         "evidence": {"tfl": [], "osm": ev, "cv": []},
         "risks": risks, "strengths": strengths,
         "steps": [], "transferCount": 0, "walkingMinutes": r["etaMin"],

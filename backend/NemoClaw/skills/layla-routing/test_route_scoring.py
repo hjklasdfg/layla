@@ -19,13 +19,23 @@ def test_scored_routes_are_map_ready():
     assert 51 < lat < 52 and -0.2 < lng < 0.1
     for k in ("score", "signals", "etaMin", "distanceM", "evidence", "mapFeatures"):
         assert k in rt
-    for s in ("accessibility", "safety", "comfort"):
+    for s in ("accessibility", "safety", "quiet", "lighting", "air"):
         assert 0 <= rt["signals"][s] <= 100
 
-def test_recommended_is_personalized():
-    r = rs.get_scored_routes("barbican", "st pauls", "blind")
+def test_recommended_fits_profile():
+    # recommended = highest persona-weighted score in the length pool; for wheelchair
+    # that should be a highly accessible (step-free) route.
+    r = rs.get_scored_routes("barbican", "st pauls", "wheelchair")
     rec = next(x for x in r["routes"] if x["id"] == r["recommended_id"])
-    assert rec["variant"] == "personalized"
+    assert rec["signals"]["accessibility"] >= 80, "wheelchair route should be highly accessible"
+
+def test_strict_breaks_length_cap():
+    # strict can surface a longer fully-accessible route the default cap would exclude
+    base = rs.get_scored_routes("barbican", "st pauls", "blind")
+    strict = rs.get_scored_routes("barbican", "st pauls", "blind", strict=True)
+    base_rec = next(x for x in base["routes"] if x["id"] == base["recommended_id"])
+    strict_rec = next(x for x in strict["routes"] if x["id"] == strict["recommended_id"])
+    assert strict_rec["signals"]["accessibility"] >= base_rec["signals"]["accessibility"]
 
 def test_routes_differ_by_profile():
     a = rs.get_scored_routes("farringdon", "aldgate", "wheelchair")

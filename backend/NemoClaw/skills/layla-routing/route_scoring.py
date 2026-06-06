@@ -10,7 +10,7 @@ Public seam:
 Each route is frontend-ready (MobilityRouteState-compatible):
     { id, start:{lat,lng}, end:{lat,lng}, etaMin, distanceM, variant,
       geometry:{coordinates:[[lat,lng],...]},      # Leaflet order
-      score, signals:{accessibility,safety,comfort}, evidence[],
+      score, signals:{accessibility,safety,quiet,lighting,air}, evidence[],
       mapFeatures:{crossings,steps,tactilePaving,riskPoints} }
 
 Scoring reuses the frontend rules (services/osm/normalize.ts) — steps/tactile/
@@ -31,20 +31,25 @@ _CACHE_FILE = os.path.join(DIR, "_graph_cache.pkl")
 
 WALK = RE.WALK_SPEED_MPS
 
-# weight sets (multipliers in RE._edge_cost) — per persona, including noise
+# Routing weights (multipliers in RE._edge_cost) — shape the GEOMETRY per persona.
+# Amplified so routes visibly diverge between personas.
 ROUTE_PROFILES = {
-    "general":      {"steps": 3, "crime": 1.0, "darkness": 0.5, "noise": 1.0},
-    "blind":        {"steps": 6, "tactile": 1.0, "crime": 1.0, "darkness": 1.0, "noise": 2.0},
-    "wheelchair":   {"steps": 50, "incline": 4, "crime": 1.0, "darkness": 0.3},
-    "elderly":      {"steps": 8, "crime": 1.5, "darkness": 1.0, "noise": 1.5},
-    "night_safety": {"steps": 3, "crime": 5.0, "darkness": 3.0},
+    "general":      {"steps": 3,  "crime": 1.0, "darkness": 0.5, "noise": 1.0},
+    "blind":        {"steps": 8,  "tactile": 2.0, "crime": 1.5, "darkness": 1.5, "noise": 3.0},
+    "wheelchair":   {"steps": 80, "incline": 6, "crime": 1.0, "darkness": 0.5, "noise": 0.3},
+    "elderly":      {"steps": 12, "crime": 2.0, "darkness": 1.5, "noise": 2.0},
+    "night_safety": {"steps": 3,  "crime": 8.0, "darkness": 5.0},
 }
-# overall-score weights per profile: (accessibility, safety, comfort)
+# Scoring weights over the 5 signals — pick the RECOMMENDED route. Amplified main signal.
+SIGNAL_KEYS = ("accessibility", "safety", "quiet", "lighting", "air")
 SCORE_W = {
-    "general": (0.34, 0.33, 0.33), "blind": (0.50, 0.22, 0.28),
-    "wheelchair": (0.60, 0.20, 0.20), "elderly": (0.40, 0.30, 0.30),
-    "night_safety": (0.20, 0.55, 0.25),
+    "general":      {"accessibility": .25, "safety": .25, "quiet": .22, "lighting": .16, "air": .12},
+    "blind":        {"accessibility": .60, "safety": .15, "quiet": .15, "lighting": .07, "air": .03},
+    "wheelchair":   {"accessibility": .70, "safety": .12, "quiet": .06, "lighting": .08, "air": .04},
+    "elderly":      {"accessibility": .40, "safety": .25, "quiet": .15, "lighting": .18, "air": .02},
+    "night_safety": {"accessibility": .08, "safety": .50, "quiet": .05, "lighting": .35, "air": .02},
 }
+LENGTH_CAP = 1.5   # exclude routes >50% longer than the fastest (unless strict)
 # tiny City-of-London gazetteer for convenience (lat, lon)
 PLACES = {
     "barbican": (51.5203, -0.0972), "moorgate": (51.5186, -0.0886),
@@ -165,11 +170,17 @@ def _build_route(g, path, profile, rid, variant, o, d):
     mf = _map_features(path_nc, step_pts)
     crossings_n = len(mf["crossings"]); tactile_n = len(mf["tactilePaving"])
 
-    accessibility = _CLAMP(100 - steps_seg * 20 - incl * 8 - max(0, crossings_n - tactile_n) * 4)
-    safety = _CLAMP(2000.0 / (crime_avg + 20.0))          # saturating: denser crime -> lower, never floors
-    comfort = _CLAMP(100 - noise_avg * 40 - dark * 4 - crossings_n * 1.5)
-    wa, ws, wc = SCORE_W.get(profile, SCORE_W["general"])
-    score = _CLAMP(accessibility * wa + safety * ws + comfort * wc)
+    mid = path_nc[len(path_nc) // 2]
+    air_idx = data.get_air(mid[1], mid[0]).get("air_index")
+    signals = {
+        "accessibility": _CLAMP(100 - steps_seg * 20 - incl * 8 - max(0, crossings_n - tactile_n) * 4),
+        "safety":        _CLAMP(100 - crime_avg * 0.25),            # crime density (City-calibrated)
+        "quiet":         _CLAMP(100 - noise_avg * 80),              # road noise
+        "lighting":      _CLAMP(100 - dark * 6),                    # explicit unlit segments
+        "air":           _CLAMP(100 - (air_idx - 1) * 10) if air_idx else 60,
+    }
+    w = SCORE_W.get(profile, SCORE_W["general"])
+    score = _CLAMP(sum(signals[k] * w[k] for k in SIGNAL_KEYS))
 
     ev = []
     ev.append("Step-free route" if steps_seg == 0 else f"{steps_seg} step section(s)")
@@ -194,13 +205,15 @@ def _build_route(g, path, profile, rid, variant, o, d):
         "distanceM": round(dist),
         "geometry": {"coordinates": geometry},
         "score": score,
-        "signals": {"accessibility": accessibility, "safety": safety, "comfort": comfort},
+        "signals": signals,
         "evidence": ev,
         "mapFeatures": mf,
     }
 
-def get_scored_routes(start, end, profile="general"):
-    """Plan scored, map-ready routes. start/end = (lat,lon) | 'lat,lon' | place name."""
+def get_scored_routes(start, end, profile="general", strict=False):
+    """Plan scored, map-ready routes. start/end = (lat,lon) | 'lat,lon' | place name.
+    strict=True forces accessibility: drops the length cap + (wheelchair/elderly) avoids
+    steps when a step-free option exists."""
     g = _graph()
     o, d = _resolve(start), _resolve(end)
     nc = g["node_coord"]
@@ -209,7 +222,8 @@ def get_scored_routes(start, end, profile="general"):
 
     variants = [("personalized", ROUTE_PROFILES.get(profile, {})),
                 ("fastest", {}),
-                ("safest", ROUTE_PROFILES["night_safety"])]
+                ("safest", ROUTE_PROFILES["night_safety"]),
+                ("quietest", {"steps": 3, "noise": 5.0})]
     seen, picked = set(), []
     for label, w in variants:
         path = RE._dijkstra(g["adj"], s, t, w, g["cache"])
@@ -226,10 +240,26 @@ def get_scored_routes(start, end, profile="general"):
 
     ids = "ABCD"
     routes = [_build_route(g, p, profile, ids[i], lbl, o, d) for i, (lbl, p) in enumerate(picked)]
-    personalized = next((r for r in routes if r["variant"] == "personalized"), None)
-    recommended = personalized["id"] if personalized else max(routes, key=lambda r: r["score"])["id"]
+
+    # Length-cap baseline = the fastest route the persona can actually USE — a
+    # steps-laden shortcut isn't a fair baseline for blind/wheelchair/elderly.
+    if profile in ("blind", "wheelchair", "elderly"):
+        viable = [r for r in routes if not r["mapFeatures"]["steps"]] or routes
+    else:
+        viable = routes
+    baseline = min(r["distanceM"] for r in viable)
+    if strict:                                   # force full accessibility — drop the length cap
+        pool = routes
+        if profile in ("wheelchair", "elderly"):
+            step_free = [r for r in pool if not r["mapFeatures"]["steps"]]
+            if step_free:
+                pool = step_free
+    else:                                        # exclude routes >50% longer than the viable-fastest
+        pool = [r for r in routes if r["distanceM"] <= baseline * LENGTH_CAP] or routes
+    recommended = max(pool, key=lambda r: r["score"])["id"]
+
     return {"start": {"lat": o[0], "lng": o[1]}, "end": {"lat": d[0], "lng": d[1]},
-            "profile": profile, "recommended_id": recommended, "routes": routes}
+            "profile": profile, "strict": strict, "recommended_id": recommended, "routes": routes}
 
 
 if __name__ == "__main__":
@@ -240,7 +270,7 @@ if __name__ == "__main__":
         if "error" in r:
             print(f"[{prof}] {r['error']}"); continue
         rec = next(x for x in r["routes"] if x["id"] == r["recommended_id"])
+        sig = " ".join(f"{k[:3]}={rec['signals'][k]}" for k in SIGNAL_KEYS)
         print(f"[{prof:12}] rec={r['recommended_id']} score={rec['score']} "
-              f"{rec['distanceM']}m/{rec['etaMin']}min | "
-              f"acc={rec['signals']['accessibility']} saf={rec['signals']['safety']} com={rec['signals']['comfort']} "
-              f"| {len(rec['geometry']['coordinates'])} pts | variants={[x['id']+':'+str(x['distanceM'])+'m' for x in r['routes']]}")
+              f"{rec['distanceM']}m/{rec['etaMin']}min | {sig} "
+              f"| variants={[x['id']+':'+str(x['distanceM'])+'m' for x in r['routes']]}")
