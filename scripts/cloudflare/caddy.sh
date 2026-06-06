@@ -38,6 +38,7 @@ docker rm -f caddy-proxy 2>/dev/null || true
 
 docker run -d \
   --name caddy-proxy \
+  --restart unless-stopped \
   --network vllm-net \
   --add-host=host.docker.internal:host-gateway \
   -p 80:80 \
