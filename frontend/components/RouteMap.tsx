@@ -28,6 +28,8 @@ const ROUTE_COLORS: Record<string, string> = {
   C: "#34d399",
   D: "#fb923c",
   E: "#f472b6",
+  F: "#f59e0b",
+  G: "#14b8a6",
 };
 
 const DEFAULT_LAYERS: MapLayerVisibility = {
