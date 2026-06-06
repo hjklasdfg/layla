@@ -346,9 +346,9 @@ export function RouteMap({
           colorClass="bg-yellow-400"
         />
         <LayerToggle
-          label="Steps"
+          label="Steps & kerbs"
           checked={layers.steps}
-          onChange={(v) => setLayers((p) => ({ ...p, steps: v }))}
+          onChange={(v) => setLayers((p) => ({ ...p, steps: v, riskPoints: v }))}
           colorClass="bg-red-400"
         />
         <LayerToggle
@@ -368,12 +368,6 @@ export function RouteMap({
           checked={layers.lighting}
           onChange={(v) => setLayers((p) => ({ ...p, lighting: v }))}
           colorClass="bg-indigo-400"
-        />
-        <LayerToggle
-          label="Risk"
-          checked={layers.riskPoints}
-          onChange={(v) => setLayers((p) => ({ ...p, riskPoints: v }))}
-          colorClass="bg-red-500"
         />
         <LayerToggle
           label="Crime"
