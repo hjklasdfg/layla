@@ -72,6 +72,16 @@ export const serverEnv = {
     get authRequired() {
       return Boolean(this.chatSecret);
     },
+    // Voice LLM backend: "model" = stream directly from a fast OpenAI-compatible
+    // model (low latency, no agent loop); "openclaw" = route through the OpenClaw
+    // agent (tools/memory, but ~20-30s — exceeds ElevenLabs' 15s cap).
+    backend: readEnv("VOICE_BACKEND") || "model",
+    modelUrl: readEnv("VOICE_MODEL_URL") || "http://127.0.0.1:8000/v1",
+    model: readEnv("VOICE_MODEL") || "nvidia/Nemotron-3-Nano-Omni-30B",
+    get modelMaxTokens() {
+      const n = Number(readEnv("VOICE_MODEL_MAX_TOKENS"));
+      return Number.isFinite(n) && n > 0 ? n : 1024;
+    },
   },
 } as const;
 
