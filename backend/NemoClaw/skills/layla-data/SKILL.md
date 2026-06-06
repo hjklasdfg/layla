@@ -46,10 +46,41 @@ Accessibility is split across three places — use all three:
 2. **Street / pavement** (tactile paving, dropped kerbs, steps) → **this skill** via `get_walkable_graph` edge attributes (`is_steps`, nearby accessibility points).
 3. **Real-time lift status** → **this skill** via `get_live_disruptions()` — overlay to correct TfL's static step-free assumption (a "step-free" station whose lift is broken today).
 
-## How to invoke
-- Python: `import layla_data_skill as data; data.get_walkable_graph((-0.100,51.515,-0.090,51.522))`
-- Or expose over MCP / HTTP for remote agents.
-- Env: set `TFL_APP_KEY` to enable live `get_live_disruptions` / `get_crowding` (falls back to cached snapshots without it).
+## How to invoke (CLI — use this from the agent)
+
+All tools are called via `scripts/query.py` from the skill directory. Output is JSON.
+
+```bash
+# Walkable graph for a bounding box (west south east north)
+python3 scripts/query.py get_walkable_graph -0.100 51.515 -0.090 51.522
+
+# Context at a point (lat lon [radius_m])
+python3 scripts/query.py get_context 51.5203 -0.0972
+python3 scripts/query.py get_context 51.5203 -0.0972 200
+
+# Accessibility features in a bbox
+python3 scripts/query.py get_accessibility -0.100 51.515 -0.090 51.522
+
+# Crime points in a bbox
+python3 scripts/query.py get_crime -0.100 51.515 -0.090 51.522
+
+# Noise and air at a point
+python3 scripts/query.py get_noise 51.5203 -0.0972
+python3 scripts/query.py get_air 51.5203 -0.0972
+
+# Live TfL (no args needed for disruptions / line status)
+python3 scripts/query.py get_live_disruptions
+python3 scripts/query.py get_line_status
+python3 scripts/query.py get_road_disruptions
+
+# Station crowding by NaPTAN ID
+python3 scripts/query.py get_crowding 940GZZLUBBN
+
+# Road disruptions filtered to a bbox
+python3 scripts/query.py get_road_disruptions -0.100 51.515 -0.090 51.522
+```
+
+Env: set `TFL_APP_KEY` to enable live `get_live_disruptions` / `get_crowding` (falls back to cached snapshots without it). `get_line_status` and `get_road_disruptions` require the key; they return `{"source":"unavailable"}` without it.
 
 ## Boundaries (do NOT)
 - Do **not** route in this skill — return `get_walkable_graph` and let the routing layer weight + search.
