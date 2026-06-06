@@ -7,7 +7,6 @@ import { isCameraOffCommand, isCameraOnCommand } from "@/lib/camera/voice-comman
 import { ChangeTimeline } from "@/components/ChangeTimeline";
 import { GeminiInputPanel, type ClientPlanPreview } from "@/components/GeminiInputPanel";
 import type { LlmPlanInput } from "@/lib/mobility/llm-plan-prompt";
-import { EventSimulator } from "@/components/EventSimulator";
 import { MobilityAgentPanel } from "@/components/MobilityAgentPanel";
 import { NavigationPanel } from "@/components/NavigationPanel";
 import { VoicePanel, type VoicePanelHandle } from "@/components/VoicePanel";
@@ -19,7 +18,6 @@ import type {
   CrimeIncidentMeta,
   CrimeIncidentResponse,
 } from "@/lib/crime/types";
-import type { CityEventType } from "@/lib/events/types";
 import type { CameraDataItem } from "@/lib/mobility/sensors";
 import type { RouteExplanation } from "@/lib/mobility/plan";
 import {
@@ -411,38 +409,6 @@ export default function Home() {
     await handleCompare();
   }
 
-  async function handleSimulateEvent(eventType: CityEventType) {
-    if (!compared) return;
-    setAgentLoading(true);
-    clearRecommendationUpdated();
-    const result = await simulateEvent(
-      eventType,
-      {
-        gps: gpsLocation,
-        cameraData,
-        preference,
-        journey: { start: start.trim(), destination: destination.trim() },
-      },
-      recommendation
-    );
-    if (result.recommendation) setRecommendation(result.recommendation);
-    if (result.explanation) setRouteExplanation(result.explanation);
-    if (result.explanation && result.recommendation) {
-      voiceRef.current?.announceRouteExplanation(
-        result.explanation,
-        result.recommendation,
-        {
-          journey: { start: start.trim(), destination: destination.trim() },
-          preference: {
-            profile: preference.profile,
-            priority: preference.priority,
-          },
-        }
-      );
-    }
-    setAgentLoading(false);
-  }
-
   async function handleCrimeMapToggle() {
     if (crimeIncidents.length > 0) {
       setCrimeLayerVisible((visible) => !visible);
@@ -780,14 +746,6 @@ export default function Home() {
 
             {compared && routesMeta && !fetchError && (
               <TfLStatusBanner meta={routesMeta} />
-            )}
-
-            {compared && (
-              <EventSimulator
-                onSimulate={handleSimulateEvent}
-                disabled={!compared || !!fetchError}
-                loading={busy}
-              />
             )}
 
             {(compared || agentLoading || planClientPreview || llmInput) && (
