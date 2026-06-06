@@ -20,7 +20,7 @@ VARIANT_NAME = {"personalized": "Personalized route", "fastest": "Fastest route"
 PROFILE_LABEL = {"general": "General", "blind": "Blind / low-vision", "wheelchair": "Wheelchair",
                  "elderly": "Elderly", "night_safety": "Night safety"}
 PRIORITY_LABEL = {"most_accessible": "Personalized", "fastest": "Fastest",
-                  "most_reliable": "Safest", "least_stressful": "Calm"}
+                  "most_reliable": "Most reliable", "least_stressful": "Least stressful"}
 
 
 def _signals(r):
