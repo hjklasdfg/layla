@@ -32,7 +32,8 @@ function AgentSection({
   );
 }
 
-function renderMarkdownBold(text: string) {
+function renderMarkdownBold(text: string | undefined | null) {
+  if (!text) return null;
   const parts = text.split(/\*\*(.*?)\*\*/g);
   return parts.map((part, i) =>
     i % 2 === 1 ? (
@@ -62,7 +63,8 @@ function ThinkingIndicator() {
   );
 }
 
-const PROVIDER_LABELS: Record<MobilityRecommendation["provider"], string> = {
+type AnyRec = MobilityRecommendation & { provider?: string; routeComparison?: string; tradeoffExplanation?: string; finalRecommendation?: string };
+const PROVIDER_LABELS: Record<string, string> = {
   mock: "Mock Agent",
   openai: "OpenAI",
   claude: "Claude",
@@ -97,9 +99,9 @@ export function MobilityAgentPanel({
             </p>
           </div>
         </div>
-        {recommendation && !loading && (
+        {recommendation && !loading && (recommendation as AnyRec).provider && (
           <span className="rounded-full border border-slate-700/60 bg-slate-800/50 px-2.5 py-0.5 font-mono text-[10px] text-slate-500">
-            {PROVIDER_LABELS[recommendation.provider]}
+            {PROVIDER_LABELS[(recommendation as AnyRec).provider!] ?? (recommendation as AnyRec).provider}
           </span>
         )}
       </div>
@@ -109,31 +111,37 @@ export function MobilityAgentPanel({
 
         {!loading && recommendation && (
           <>
-            <AgentSection
-              title="Route comparison"
-              icon={
-                <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor">
-                  <path d="M2 3h8v1H2V3zm0 2.5h5v1H2v-1zm0 2.5h6v1H2v-1z" />
-                </svg>
-              }
-            >
-              <p>{renderMarkdownBold(recommendation.routeComparison)}</p>
-            </AgentSection>
+            {(recommendation as AnyRec).routeComparison && (
+              <>
+                <AgentSection
+                  title="Route comparison"
+                  icon={
+                    <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor">
+                      <path d="M2 3h8v1H2V3zm0 2.5h5v1H2v-1zm0 2.5h6v1H2v-1z" />
+                    </svg>
+                  }
+                >
+                  <p>{renderMarkdownBold((recommendation as AnyRec).routeComparison)}</p>
+                </AgentSection>
+                <div className="h-px bg-slate-800/80" />
+              </>
+            )}
 
-            <div className="h-px bg-slate-800/80" />
-
-            <AgentSection
-              title="Trade-offs"
-              icon={
-                <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor">
-                  <path d="M6 1L10 6H7v5H5V6H2L6 1z" />
-                </svg>
-              }
-            >
-              <p>{renderMarkdownBold(recommendation.tradeoffExplanation)}</p>
-            </AgentSection>
-
-            <div className="h-px bg-slate-800/80" />
+            {(recommendation as AnyRec).tradeoffExplanation && (
+              <>
+                <AgentSection
+                  title="Trade-offs"
+                  icon={
+                    <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor">
+                      <path d="M6 1L10 6H7v5H5V6H2L6 1z" />
+                    </svg>
+                  }
+                >
+                  <p>{renderMarkdownBold((recommendation as AnyRec).tradeoffExplanation)}</p>
+                </AgentSection>
+                <div className="h-px bg-slate-800/80" />
+              </>
+            )}
 
             <AgentSection
               title="Recommendation"
@@ -144,9 +152,17 @@ export function MobilityAgentPanel({
               }
             >
               <p className="rounded-lg border border-teal-500/20 bg-teal-950/20 px-3 py-2.5 text-slate-300">
-                {renderMarkdownBold(recommendation.finalRecommendation)}
+                {renderMarkdownBold((recommendation as AnyRec).finalRecommendation ?? recommendation.reason)}
               </p>
             </AgentSection>
+
+            {(recommendation.warnings ?? []).length > 0 && (
+              <ul className="space-y-1 pl-1 text-xs text-amber-400/80">
+                {(recommendation.warnings ?? []).map((w) => (
+                  <li key={w}>⚠ {w}</li>
+                ))}
+              </ul>
+            )}
 
             <div className="flex items-center gap-2 pt-1">
               <span className="inline-flex items-center gap-1 rounded-md bg-slate-800/60 px-2 py-1 text-[10px] text-slate-500">

@@ -109,7 +109,7 @@ export function RouteCard({
           <p className="font-mono text-[10px] uppercase tracking-widest text-slate-500">
             Route {route.routeId}
           </p>
-          <h3 className="text-lg font-semibold text-white">{route.name}</h3>
+          <h3 className="text-lg font-semibold text-white">{(route as {name?: string}).name ?? `Route ${route.routeId}`}</h3>
           {(route.steps?.length ?? 0) > 0 ? (
             <p className="mt-1 font-mono text-[10px] leading-relaxed text-slate-400">
               {route.steps!.map((s) =>
@@ -121,11 +121,11 @@ export function RouteCard({
               ).join(" → ")}
             </p>
           ) : (
-            (route.transferCount !== undefined ||
-              route.walkingMinutes !== undefined) && (
+            ((route as {transferCount?: number}).transferCount !== undefined ||
+              (route as {walkingMinutes?: number}).walkingMinutes !== undefined) && (
               <p className="mt-1 font-mono text-[10px] text-slate-500">
-                {route.transferCount ?? 0} transfers · {route.walkingMinutes ?? 0}{" "}
-                min walk
+                {(route as {transferCount?: number}).transferCount ?? 0} transfers ·{" "}
+                {(route as {walkingMinutes?: number}).walkingMinutes ?? 0} min walk
               </p>
             )
           )}
@@ -136,15 +136,15 @@ export function RouteCard({
             {route.etaMin}
             <span className="text-sm text-slate-400"> min</span>
           </p>
-          {(route.additionalWaitMin ?? 0) > 0 && (
+          {((route as {additionalWaitMin?: number}).additionalWaitMin ?? 0) > 0 && (
             <p className="mt-0.5 font-mono text-[10px] text-red-300">
-              incl. +{route.additionalWaitMin} min wait
+              incl. +{(route as {additionalWaitMin?: number}).additionalWaitMin} min wait
             </p>
           )}
-          {route.plannedEtaMin !== undefined &&
-            route.plannedEtaMin !== route.etaMin && (
+          {(route as {plannedEtaMin?: number}).plannedEtaMin !== undefined &&
+            (route as {plannedEtaMin?: number}).plannedEtaMin !== route.etaMin && (
               <p className="font-mono text-[10px] text-slate-600 line-through">
-                {route.plannedEtaMin} min planned
+                {(route as {plannedEtaMin?: number}).plannedEtaMin} min planned
               </p>
             )}
         </div>
@@ -182,14 +182,14 @@ export function RouteCard({
           />
           <AnimatedScoreMetric
             label="Crowding"
-            value={signals.crowding}
-            previousValue={prevSignals?.crowding}
+            value={(signals as {crowding?: number}).crowding ?? 0}
+            previousValue={(prevSignals as ({crowding?: number} | undefined))?.crowding}
             invert
           />
           <AnimatedScoreMetric
             label="Crossing Complexity"
-            value={signals.crossingComplexity}
-            previousValue={prevSignals?.crossingComplexity}
+            value={(signals as {crossingComplexity?: number}).crossingComplexity ?? 0}
+            previousValue={(prevSignals as ({crossingComplexity?: number} | undefined))?.crossingComplexity}
             invert
           />
         </div>
@@ -202,7 +202,7 @@ export function RouteCard({
             Key Risks
           </h4>
           <ul className="space-y-1.5">
-            {route.risks.map((risk) => (
+            {((route as {risks?: string[]}).risks ?? []).map((risk) => (
               <li key={risk} className="text-sm leading-snug text-slate-400">
                 {risk}
               </li>
@@ -215,7 +215,7 @@ export function RouteCard({
             Key Strengths
           </h4>
           <ul className="space-y-1.5">
-            {route.strengths.map((strength) => (
+            {((route as {strengths?: string[]}).strengths ?? []).map((strength) => (
               <li key={strength} className="text-sm leading-snug text-slate-400">
                 {strength}
               </li>
