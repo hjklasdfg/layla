@@ -113,9 +113,6 @@ export function AccessibilityLayer({
       ...(r.osmContext?.mapFeatures.riskPoints ?? []),
     ])
   );
-  const allNoise = dedupeFeatures(
-    routes.flatMap((r) => r.osmContext?.mapFeatures.noisy ?? [])
-  );
   const allLighting = dedupeFeatures(
     routes.flatMap((r) => r.osmContext?.mapFeatures.unlit ?? [])
   );
@@ -152,15 +149,6 @@ export function AccessibilityLayer({
             key={`risk-${f.lat}-${f.lng}-${f.type}`}
             feature={f}
             highContrast={highContrast}
-          />
-        ))}
-      {layers.noise &&
-        allNoise.map((f) => (
-          <FeatureMarker
-            key={`noise-${f.lat}-${f.lng}`}
-            feature={f}
-            highContrast={highContrast}
-            colorOverride={{ fill: "#fb923c", stroke: "#fed7aa" }}
           />
         ))}
       {layers.lighting &&

@@ -1,8 +1,9 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   CircleMarker,
+  GeoJSON,
   MapContainer,
   Popup,
   Polyline,
@@ -10,6 +11,7 @@ import {
   Tooltip,
 } from "react-leaflet";
 import L from "leaflet";
+import type { FeatureCollection } from "geojson";
 import type { CrimeIncident, CrimeIncidentMeta } from "@/lib/crime/types";
 import type { MobilityRouteState } from "@/lib/mobilityEngine";
 import {
@@ -181,6 +183,42 @@ function CrimeIncidentLayer({
   );
 }
 
+const NOISE_COLORS: Record<string, string> = {
+  "55.0-59.9": "#a6d96a",
+  "60.0-64.9": "#fee08b",
+  "65.0-69.9": "#fdae61",
+  "70.0-74.9": "#f46d43",
+  ">=75.0": "#d73027",
+};
+
+function NoiseLayer() {
+  const [data, setData] = useState<FeatureCollection | null>(null);
+  useEffect(() => {
+    let active = true;
+    fetch("/api/layers/noise")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (active && d?.features) setData(d as FeatureCollection);
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, []);
+  if (!data) return null;
+  return (
+    <GeoJSON
+      data={data}
+      style={(feature) => {
+        const band = (feature?.properties as { NoiseClass?: string } | undefined)
+          ?.NoiseClass;
+        const c = (band && NOISE_COLORS[band]) || "#9aa3b2";
+        return { color: c, weight: 0, fillColor: c, fillOpacity: 0.4 };
+      }}
+    />
+  );
+}
+
 export function RouteMap({
   routes,
   selectedRouteId,
@@ -335,6 +373,8 @@ export function RouteMap({
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
           url={tileUrl}
         />
+
+        {layers.noise && <NoiseLayer />}
 
         {bounds && <MapBoundsUpdater bounds={bounds} />}
 
