@@ -52,6 +52,27 @@ export const serverEnv = {
       return Boolean(this.apiKey && this.agentId);
     },
   },
+  // OpenClaw gateway (the always-on agent). The /api/voice/chat adapter bridges
+  // ElevenLabs Custom-LLM (OpenAI chat-completions SSE) to this gateway's
+  // WebSocket RPC. The agent runs on the same DGX host; the token comes from
+  // <openclaw home>/openclaw.json -> gateway.auth.token.
+  openclaw: {
+    gatewayUrl: readEnv("OPENCLAW_GATEWAY_URL") || "ws://127.0.0.1:18789/ws",
+    gatewayToken: readEnv("OPENCLAW_GATEWAY_TOKEN"),
+    model: readEnv("OPENCLAW_MODEL") || "nvidia/Nemotron-3-Nano-Omni-30B-A3B-Reasoning-NVFP4",
+    get enabled() {
+      return Boolean(this.gatewayUrl);
+    },
+  },
+  // Shared secret ElevenLabs Custom-LLM sends as `Authorization: Bearer <secret>`
+  // on every /api/voice/chat call. Empty = endpoint open (dev only — never in
+  // production behind a public tunnel).
+  voice: {
+    chatSecret: readEnv("VOICE_CHAT_SECRET"),
+    get authRequired() {
+      return Boolean(this.chatSecret);
+    },
+  },
 } as const;
 
 export function tflQueryParams(): string {
@@ -69,4 +90,13 @@ export const publicEnv = {
   voiceEnabled:
     readEnv("NEXT_PUBLIC_VOICE_ENABLED") === "true" ||
     Boolean(readEnv("NEXT_PUBLIC_ELEVENLABS_AGENT_ID")),
+  /**
+   * Voice transport: "conversational" = ElevenLabs Conversational AI (full-duplex,
+   * routed through the OpenClaw agent via /api/voice/chat); "scribe" = legacy
+   * push-to-talk STT. Defaults to scribe until Conversational AI is proven (A6).
+   */
+  voiceMode:
+    readEnv("NEXT_PUBLIC_VOICE_MODE") === "conversational"
+      ? ("conversational" as const)
+      : ("scribe" as const),
 } as const;

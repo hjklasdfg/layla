@@ -9,6 +9,7 @@ import {
   useState,
 } from "react";
 import { CommitStrategy, useScribe } from "@elevenlabs/react";
+import { VoiceConversationPanel } from "./VoiceConversationPanel";
 import type { MobilityRecommendation, UserPreference } from "@/lib/agent/types";
 import type { RouteExplanation } from "@/lib/mobility/plan";
 import { buildSpeakLinesFromPlan } from "@/lib/voice/speak-script";
@@ -601,9 +602,18 @@ export const VoicePanel = forwardRef<
   VoicePanelHandle,
   { onUserSpeech?: (text: string) => void }
 >(function VoicePanel({ onUserSpeech }, ref) {
+  // Conversational AI mode (full-duplex through the NemoClaw/OpenClaw agent):
+  // requires NEXT_PUBLIC_VOICE_MODE=conversational AND an agent id. Falls back
+  // to the legacy Scribe push-to-talk panel otherwise. The imperative ref
+  // (announceRouteExplanation, etc.) is Scribe-flow only; page.tsx calls it with
+  // optional chaining, so it safely no-ops in conversational mode.
+  const agentId = process.env.NEXT_PUBLIC_ELEVENLABS_AGENT_ID;
+  if (process.env.NEXT_PUBLIC_VOICE_MODE === "conversational" && agentId) {
+    return <VoiceConversationPanel />;
+  }
+
   const voiceEnabled =
-    process.env.NEXT_PUBLIC_VOICE_ENABLED === "true" ||
-    Boolean(process.env.NEXT_PUBLIC_ELEVENLABS_AGENT_ID);
+    process.env.NEXT_PUBLIC_VOICE_ENABLED === "true" || Boolean(agentId);
   if (!voiceEnabled) return <VoicePanelPlaceholder />;
   return <VoicePanelActive ref={ref} onUserSpeech={onUserSpeech} />;
 });
