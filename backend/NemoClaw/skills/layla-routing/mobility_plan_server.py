@@ -37,6 +37,7 @@ def _signals(r):
 
 def _state(r):
     ev = r.get("evidence", [])
+    mf = r["mapFeatures"]
     risks = [e for e in ev if any(k in e.lower() for k in ("step", "noisy", "unlit"))]
     strengths = [e for e in ev if e not in risks]
     return {
@@ -49,7 +50,13 @@ def _state(r):
         "risks": risks, "strengths": strengths,
         "steps": [], "transferCount": 0, "walkingMinutes": r["etaMin"],
         "disruptions": [], "modes": ["walking"],
-        "riskyFeatures": r["mapFeatures"]["riskPoints"], "osmContext": None,
+        "riskyFeatures": mf["riskPoints"],
+        "osmContext": {                              # frontend AccessibilityLayer reads this
+            "crossingCount": len(mf["crossings"]), "trafficSignalCount": 0,
+            "footwayCount": 0, "stepsCount": len(mf["steps"]), "kerbCount": 0,
+            "tactilePavingCount": len(mf["tactilePaving"]), "wheelchairTaggedCount": 0,
+            "riskyFeatures": mf["riskPoints"], "evidence": ev, "mapFeatures": mf,
+        },
     }
 
 def _enriched(st):
