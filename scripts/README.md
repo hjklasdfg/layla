@@ -11,6 +11,9 @@ scripts/
 ├── nano-image-chat.py        # multimodal image chat CLI
 ├── assets/                   # test images
 │   └── police-road-block-AG3Y12.jpg
+├── cloudflare/
+│   ├── README.md                          # Cloudflare Tunnel setup & usage
+│   └── cloudflared-tunnel.sh              # Quick Tunnel: expose vLLM to internet
 ├── dgx/
 │   ├── nemotron-nano-omni-30b-nvfp4.sh   # start vLLM container on DGX
 │   └── open-webui.sh                      # start Open WebUI connected to vLLM
