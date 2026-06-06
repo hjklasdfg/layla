@@ -20,7 +20,7 @@ small set of tools. Routing is handled elsewhere; this skill provides the data.
 - **Crime** points (Met/City Police, 25 months)
 - **Noise** (DEFRA road-noise dB bands)
 - **Air** (London Air monitoring sites — coarse; not per-street)
-- **Live TfL** (lift outages, station crowding)
+- **Live TfL** (lift outages, station crowding, line status, road disruptions)
 
 Scope: City-of-London corridor first. Coordinates are WGS84. `bbox = (west, south, east, north)`.
 
@@ -37,6 +37,8 @@ Call these functions; each returns JSON.
 | `get_air(lat, lon)` | point | nearest air index (coarse) | Area air-quality hint (not per-street). |
 | `get_live_disruptions()` | — | TfL lift outages | Real-time step-free breakage. |
 | `get_crowding(naptan)` | station id | live crowding % | Station busyness (proxy for footfall). |
+| `get_line_status(modes=…)` | — | line statuses + reasons | Transit reliability (delays/closures). |
+| `get_road_disruptions(bbox=None)` | bbox? | roadworks/closures + coords | Street disruptions on walking legs; bbox filters to area. |
 
 ## Three-layer accessibility (important)
 Accessibility is split across three places — use all three:

@@ -10,7 +10,7 @@
 | **Executable** | `layla_data_skill.py` (pure-Python; JSON I/O) |
 
 ## Capabilities
-- `get_walkable_graph`, `get_context`, `get_accessibility`, `get_crime`, `get_noise`, `get_air`, `get_live_disruptions`, `get_crowding`
+- `get_walkable_graph`, `get_context`, `get_accessibility`, `get_crime`, `get_noise`, `get_air`, `get_live_disruptions`, `get_crowding`, `get_line_status`, `get_road_disruptions`
 
 ## Data sources & licenses
 | Layer | Source | Licence |

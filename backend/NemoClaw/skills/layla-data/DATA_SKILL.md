@@ -51,6 +51,12 @@ TfL lift outages (step-free breakage). `source` = "live" (if `TFL_APP_KEY` set) 
 ### `get_crowding(naptan) -> {source, percentage_of_baseline, time}`
 TfL live station crowding (proxy for street busyness).
 
+### `get_line_status(modes="tube,dlr,elizabeth-line,overground") -> {source, count, lines[]}`
+TfL line statuses/disruptions. `lines[i] = {line, mode, status, reason}`. Transit reliability signal.
+
+### `get_road_disruptions(bbox=None) -> {source, count, disruptions[]}`
+TfL roadworks/closures (live). `disruptions[i] = {severity, category, location, description, lat, lon}`. `bbox=(w,s,e,n)` filters to disruptions whose coords fall in the box.
+
 ## Accessibility — three layers (who handles what)
 
 Accessibility is **not one thing** — it's handled in three places. Don't try to

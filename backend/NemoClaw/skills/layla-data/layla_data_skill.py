@@ -220,6 +220,44 @@ def get_crowding(naptan):
     return {"source": src, "naptan": naptan, "percentage_of_baseline": d.get("percentageOfBaseline"),
             "time": d.get("timeLocal") or d.get("timeUtc")}
 
+def get_line_status(modes="tube,dlr,elizabeth-line,overground"):
+    """TfL line status/disruptions for the given modes (live). Reliability signal."""
+    try:
+        data = _tfl(f"/Line/Mode/{modes}/Status")
+    except Exception:
+        return {"source": "unavailable", "lines": []}
+    lines = []
+    for ln in data:
+        sts = ln.get("lineStatuses") or []
+        worst = min(sts, key=lambda s: s.get("statusSeverity", 10)) if sts else {}
+        lines.append({"line": ln.get("name"), "mode": ln.get("modeName"),
+                      "status": worst.get("statusSeverityDescription"),
+                      "reason": worst.get("reason")})
+    return {"source": "live", "count": len(lines), "lines": lines}
+
+def get_road_disruptions(bbox=None):
+    """TfL road disruptions / roadworks (live). bbox=(w,s,e,n) filters to coords in box."""
+    try:
+        data = _tfl("/Road/all/Disruption")
+    except Exception:
+        return {"source": "unavailable", "disruptions": []}
+    out = []
+    for d in data:
+        lat = lon = None
+        coords = (d.get("geography") or {}).get("coordinates")
+        if isinstance(coords, list) and len(coords) >= 2:
+            try:
+                lon, lat = float(coords[0]), float(coords[1])
+            except (TypeError, ValueError):
+                lat = lon = None
+        if bbox is not None and (lat is None or not _in_bbox(lon, lat, bbox)):
+            continue
+        out.append({"severity": d.get("severity"), "category": d.get("category"),
+                    "location": d.get("location"),
+                    "description": (d.get("comments") or d.get("currentUpdate") or "")[:160],
+                    "lat": lat, "lon": lon})
+    return {"source": "live", "count": len(out), "disruptions": out[:50]}
+
 
 if __name__ == "__main__":
     CORRIDOR = (-0.100, 51.515, -0.090, 51.522)
@@ -230,3 +268,5 @@ if __name__ == "__main__":
     print("== get_context(Barbican) =="); ctx = get_context(51.5203, -0.0972); print({"accessibility_nearby": len(ctx["accessibility_nearby"]), "crime_count_nearby": ctx["crime_count_nearby"], "noise": ctx["noise"]["band"], "air": ctx["air"]["air_index"]})
     print("== get_walkable_graph(corridor) =="); g = get_walkable_graph(CORRIDOR); print({"node_count": g["node_count"], "edge_count": g["edge_count"], "sample_edge": g["edges"][0]})
     print("== get_live_disruptions() =="); d = get_live_disruptions(); print({"source": d["source"], "count": d["count"], "first": d["disruptions"][0] if d["disruptions"] else None})
+    print("== get_line_status() =="); ls = get_line_status(); print({"source": ls["source"], "count": ls.get("count"), "sample": ls["lines"][:3]})
+    print("== get_road_disruptions() =="); rd = get_road_disruptions(); print({"source": rd["source"], "count": rd.get("count"), "first": rd["disruptions"][0] if rd["disruptions"] else None})
