@@ -25,6 +25,7 @@ const ROUTE_COLORS: Record<string, string> = {
   B: "#a78bfa",
   C: "#34d399",
   D: "#fb923c",
+  E: "#f472b6",
 };
 
 const DEFAULT_LAYERS: MapLayerVisibility = {
@@ -375,7 +376,7 @@ export function RouteMap({
                 }}
               >
                 <Tooltip sticky className="!text-xs !font-semibold">
-                  Route {route.id} · {route.etaMin} min
+                  {route.name ?? `Route ${route.id}`} · {route.etaMin} min
                 </Tooltip>
               </Polyline>
             );
@@ -415,7 +416,7 @@ export function RouteMap({
                 className="h-2.5 w-6 rounded-full"
                 style={{ backgroundColor: color }}
               />
-              Route {route.id} · {route.etaMin} min
+              {route.name ?? `Route ${route.id}`} · {route.etaMin} min
             </button>
           );
         })}
