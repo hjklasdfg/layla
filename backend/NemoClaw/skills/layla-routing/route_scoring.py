@@ -180,7 +180,7 @@ def _map_features(path_nc, step_pts):
     steps = [{"type": "steps", "lat": p[1], "lng": p[0],
               "reason": "Steps on path", "severity": "risk"} for p in step_pts]
     return {"crossings": crossings[:40], "steps": steps[:30],
-            "tactilePaving": tactile[:30], "riskPoints": (steps + risk)[:40]}
+            "tactilePaving": tactile[:30], "riskPoints": risk[:40]}  # kerbs only (steps have own layer)
 
 def _build_route(g, path, profile, rid, variant, o, d):
     nc, cache = g["node_coord"], g["cache"]
