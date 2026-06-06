@@ -1,14 +1,17 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useState } from "react";
+import { useRef, useState } from "react";
+import { CameraPanel, type CameraPanelHandle } from "@/components/CameraPanel";
+import { isCameraOffCommand, isCameraOnCommand } from "@/lib/camera/voice-commands";
 import { ChangeTimeline } from "@/components/ChangeTimeline";
+import { GeminiInputPanel, type ClientPlanPreview } from "@/components/GeminiInputPanel";
+import type { LlmPlanInput } from "@/lib/mobility/llm-plan-prompt";
 import { EventSimulator } from "@/components/EventSimulator";
-import { LiveStreetIntelligencePanel } from "@/components/LiveStreetIntelligencePanel";
 import { MobilityAgentPanel } from "@/components/MobilityAgentPanel";
+import { VoicePanel, type VoicePanelHandle } from "@/components/VoicePanel";
 import { RouteCard } from "@/components/RouteCard";
-import { generateMobilityRecommendation } from "@/lib/agent";
-import type { MobilityRecommendation, UserPreference } from "@/lib/agent";
+import type { MobilityRecommendation, UserPreference } from "@/lib/agent/types";
 import { PRIORITY_LABELS, PROFILE_LABELS } from "@/lib/agent/types";
 import type {
   CrimeIncident,
@@ -16,6 +19,14 @@ import type {
   CrimeIncidentResponse,
 } from "@/lib/crime/types";
 import type { CityEventType } from "@/lib/events/types";
+import type { CameraDataItem } from "@/lib/mobility/sensors";
+import type { RouteExplanation } from "@/lib/mobility/plan";
+import {
+  isLikelyJourneyRequest,
+  parseVoiceIntent,
+  shouldTriggerMobilityPlan,
+} from "@/lib/mobility/voice-intent";
+import { useGeolocation } from "@/hooks/useGeolocation";
 import { useLiveRoutes } from "@/hooks/useLiveRoutes";
 
 const RouteMap = dynamic(
@@ -89,7 +100,6 @@ export default function Home() {
     routes,
     mobilityRoutes,
     routesMeta,
-    cvFeed,
     prevSignals,
     timeline,
     recommendationUpdated,
@@ -97,7 +107,7 @@ export default function Home() {
     isSearching,
     fetchError,
     canRetry,
-    fetchRoutes,
+    runMobilityPlan,
     simulateEvent,
     clearRecommendationUpdated,
     clearError,
@@ -114,6 +124,13 @@ export default function Home() {
   const [recommendation, setRecommendation] = useState<MobilityRecommendation | null>(
     null
   );
+  const [routeExplanation, setRouteExplanation] = useState<RouteExplanation | null>(
+    null
+  );
+  const [planClientPreview, setPlanClientPreview] = useState<ClientPlanPreview | null>(
+    null
+  );
+  const [llmInput, setLlmInput] = useState<LlmPlanInput | null>(null);
   const [selectedRouteId, setSelectedRouteId] = useState<string | null>(null);
   const [highContrastMap, setHighContrastMap] = useState(false);
   const [crimeIncidents, setCrimeIncidents] = useState<CrimeIncident[]>([]);
@@ -121,6 +138,10 @@ export default function Home() {
   const [crimeLayerVisible, setCrimeLayerVisible] = useState(false);
   const [crimeLoading, setCrimeLoading] = useState(false);
   const [crimeError, setCrimeError] = useState<string | null>(null);
+  const { location: gpsLocation } = useGeolocation(true);
+  const voiceRef = useRef<VoicePanelHandle>(null);
+  const cameraRef = useRef<CameraPanelHandle>(null);
+  const planningInFlightRef = useRef(false);
 
   const preference: UserPreference = {
     profile,
@@ -130,39 +151,159 @@ export default function Home() {
   const journeyLabel =
     start && destination ? `${start} → ${destination}` : undefined;
 
-  async function handleCompare() {
-    if (!start.trim() || !destination.trim()) return;
+  const cameraData: CameraDataItem[] = [];
+
+  async function runPlan(options: {
+    audioInput?: string;
+    journey?: { start?: string; destination?: string };
+    profileOverride?: UserPreference["profile"];
+  }) {
+    if (planningInFlightRef.current) return;
+    planningInFlightRef.current = true;
 
     setCompared(true);
     setAgentLoading(true);
     setRecommendation(null);
+    setRouteExplanation(null);
+    setLlmInput(null);
     clearRecommendationUpdated();
     clearError();
 
-    try {
-      const result = await fetchRoutes(
-        start.trim(),
-        destination.trim(),
-        profile,
-        priority,
-        customNotes.trim() || undefined
-      );
-      setSelectedRouteId(result.routes[0]?.routeId ?? null);
+    const planPreference: UserPreference = {
+      profile: options.profileOverride ?? profile,
+      priority,
+      ...(customNotes.trim() ? { customNotes: customNotes.trim() } : {}),
+    };
 
-      const agentResult = await generateMobilityRecommendation({
-        routes: result.routes,
-        preference,
-        journey: {
-          start: start.trim(),
-          destination: destination.trim(),
+    if (options.profileOverride && options.profileOverride !== profile) {
+      setProfile(options.profileOverride);
+    }
+
+    if (options.audioInput) {
+      setPlanClientPreview({
+        trigger: "voice",
+        audioInput: options.audioInput,
+        journey: options.journey,
+        preference: {
+          profile: planPreference.profile,
+          priority: planPreference.priority,
+          ...(planPreference.customNotes
+            ? { customNotes: planPreference.customNotes }
+            : {}),
         },
       });
-      setRecommendation(agentResult);
-    } catch {
-      // fetchError set by hook
+      voiceRef.current?.notifyPlanningStarted(
+        options.journey?.start && options.journey?.destination
+          ? {
+              start: options.journey.start,
+              destination: options.journey.destination,
+            }
+          : undefined
+      );
+    } else if (options.journey?.start && options.journey?.destination) {
+      setPlanClientPreview({
+        trigger: "form",
+        journey: options.journey,
+        preference: {
+          profile: planPreference.profile,
+          priority: planPreference.priority,
+          ...(planPreference.customNotes
+            ? { customNotes: planPreference.customNotes }
+            : {}),
+        },
+      });
+    } else {
+      setPlanClientPreview(null);
+    }
+
+    try {
+      const result = await runMobilityPlan({
+        audioInput: options.audioInput,
+        gps: gpsLocation,
+        cameraData,
+        preference: planPreference,
+        journey: options.journey,
+      });
+
+      setStart(result.journey.start);
+      setDestination(result.journey.destination);
+      setSelectedRouteId(result.recommendation.recommendedRouteId);
+      setRecommendation(result.recommendation);
+      setRouteExplanation(result.explanation);
+      const sent = result.meta.llmInput ?? result.meta.geminiInput;
+      if (sent) {
+        setLlmInput(sent);
+      }
+      voiceRef.current?.announceRouteExplanation(
+        result.explanation,
+        result.recommendation,
+        {
+          journey: result.journey,
+          preference: {
+            profile: planPreference.profile,
+            priority: planPreference.priority,
+          },
+        }
+      );
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Mobility plan failed";
+      voiceRef.current?.notifyPlanningFailed(message);
     } finally {
       setAgentLoading(false);
+      planningInFlightRef.current = false;
     }
+  }
+
+  async function handleCompare() {
+    if (!start.trim() || !destination.trim()) return;
+
+    await runPlan({
+      journey: {
+        start: start.trim(),
+        destination: destination.trim(),
+      },
+    });
+  }
+
+  async function handleVoiceInput(text: string) {
+    if (isCameraOnCommand(text)) {
+      try {
+        await cameraRef.current?.startRecording();
+      } catch {
+        // CameraPanel shows its own error
+      }
+      return;
+    }
+
+    if (isCameraOffCommand(text)) {
+      cameraRef.current?.stopRecording();
+      return;
+    }
+
+    const voiceIntent = parseVoiceIntent(text);
+    if (voiceIntent.profile) {
+      setProfile(voiceIntent.profile);
+    }
+
+    if (!shouldTriggerMobilityPlan(text)) {
+      if (isLikelyJourneyRequest(text)) {
+        voiceRef.current?.notifyHeardButNoJourney();
+      }
+      return;
+    }
+
+    if (planningInFlightRef.current) return;
+
+    voiceRef.current?.notifySpeechReceived(text, voiceIntent.journey);
+
+    void runPlan({
+      audioInput: text,
+      profileOverride: voiceIntent.profile,
+      journey: {
+        start: voiceIntent.journey.start,
+        destination: voiceIntent.journey.destination,
+      },
+    });
   }
 
   async function handleRetry() {
@@ -176,11 +317,29 @@ export default function Home() {
     clearRecommendationUpdated();
     const result = await simulateEvent(
       eventType,
-      preference,
-      { start: start.trim(), destination: destination.trim() },
+      {
+        gps: gpsLocation,
+        cameraData,
+        preference,
+        journey: { start: start.trim(), destination: destination.trim() },
+      },
       recommendation
     );
     if (result.recommendation) setRecommendation(result.recommendation);
+    if (result.explanation) setRouteExplanation(result.explanation);
+    if (result.explanation && result.recommendation) {
+      voiceRef.current?.announceRouteExplanation(
+        result.explanation,
+        result.recommendation,
+        {
+          journey: { start: start.trim(), destination: destination.trim() },
+          preference: {
+            profile: preference.profile,
+            priority: preference.priority,
+          },
+        }
+      );
+    }
     setAgentLoading(false);
   }
 
@@ -233,7 +392,7 @@ export default function Home() {
         <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-4 sm:px-6">
           <div>
             <h1 className="text-lg font-bold tracking-tight text-white sm:text-xl">
-              TongSense
+              Layla
               <span className="ml-2 font-normal text-slate-400">—</span>
               <span className="ml-2 font-normal text-cyan-400">
                 Accessibility Mobility Intelligence
@@ -256,6 +415,14 @@ export default function Home() {
       <main className="mx-auto max-w-6xl px-4 py-6 sm:px-6 sm:py-8">
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
           <section className="space-y-4 lg:col-span-4">
+            <VoicePanel ref={voiceRef} onUserSpeech={handleVoiceInput} />
+
+            <CameraPanel
+              ref={cameraRef}
+              gps={gpsLocation}
+              locationDescription={journeyLabel}
+            />
+
             <div className="rounded-xl border border-slate-700/60 bg-slate-900/50 p-5 backdrop-blur">
               <h2 className="mb-4 text-xs font-semibold uppercase tracking-widest text-cyan-400">
                 Plan Your Journey
@@ -388,14 +555,37 @@ export default function Home() {
               />
             )}
 
-            <LiveStreetIntelligencePanel feed={cvFeed} live={false} />
+            {(compared || agentLoading || planClientPreview || llmInput) && (
+              <GeminiInputPanel
+                loading={agentLoading || isSearching}
+                clientPreview={planClientPreview}
+                llmInput={llmInput}
+              />
+            )}
 
             {(compared || agentLoading) && (
               <MobilityAgentPanel
                 recommendation={recommendation}
+                explanation={routeExplanation}
                 loading={agentLoading}
                 journeyLabel={journeyLabel}
                 recommendationUpdated={recommendationUpdated}
+                onReplayVoice={
+                  routeExplanation && recommendation
+                    ? () =>
+                        voiceRef.current?.announceRouteExplanation(
+                          routeExplanation,
+                          recommendation,
+                          {
+                            journey: { start, destination },
+                            preference: {
+                              profile: preference.profile,
+                              priority: preference.priority,
+                            },
+                          }
+                        )
+                    : undefined
+                }
               />
             )}
 

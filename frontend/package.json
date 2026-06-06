@@ -1,14 +1,20 @@
 {
-  "name": "tongsense-app",
+  "name": "layla-app",
   "version": "0.1.0",
   "private": true,
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test:gemini-backend": "node scripts/test-gemini-backend.mjs",
+    "test:gemini-backend:dry": "node scripts/test-gemini-backend.mjs --dry-run",
+    "test:nemotron-backend": "node scripts/test-nemotron-backend.mjs",
+    "test:nemotron-backend:dry": "node scripts/test-nemotron-backend.mjs --dry-run",
+    "test:nemotron-backend:models": "node scripts/test-nemotron-backend.mjs --list-models"
   },
   "dependencies": {
+    "@elevenlabs/react": "^1.6.4",
     "@mapbox/polyline": "^1.2.1",
     "@types/leaflet": "^1.9.21",
     "leaflet": "^1.9.4",

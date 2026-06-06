@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import { VoiceProviders } from "@/components/VoiceProviders";
+import { publicEnv } from "@/lib/config/env";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -13,7 +15,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "TongSense — Accessibility Mobility Intelligence",
+  title: "Layla — Accessibility Mobility Intelligence",
   description:
     "Compare mobility routes with accessibility, stress, and reliability scores.",
 };
@@ -29,7 +31,9 @@ export default function RootLayout({
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col bg-[#050810] text-slate-200">
-        {children}
+        <VoiceProviders agentId={publicEnv.elevenlabsAgentId || undefined}>
+          {children}
+        </VoiceProviders>
       </body>
     </html>
   );

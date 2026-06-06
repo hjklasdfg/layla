@@ -1,13 +1,16 @@
 "use client";
 
 import type { ReactNode } from "react";
-import type { MobilityRecommendation } from "@/lib/agent";
+import type { MobilityRecommendation } from "@/lib/agent/types";
+import type { RouteExplanation } from "@/lib/mobility/plan";
 
 interface MobilityAgentPanelProps {
   recommendation: MobilityRecommendation | null;
+  explanation?: RouteExplanation | null;
   loading: boolean;
   journeyLabel?: string;
   recommendationUpdated?: boolean;
+  onReplayVoice?: () => void;
 }
 
 function AgentSection({
@@ -57,7 +60,7 @@ function ThinkingIndicator() {
           />
         ))}
       </div>
-      <span className="text-sm text-slate-500">Analysing routes…</span>
+      <span className="text-sm text-slate-500">Planning route…</span>
     </div>
   );
 }
@@ -67,14 +70,18 @@ const PROVIDER_LABELS: Record<MobilityRecommendation["provider"], string> = {
   openai: "OpenAI",
   claude: "Claude",
   gemini: "Gemini",
+  nemotron: "Nemotron",
   ollama: "Ollama",
+  backend: "Backend",
 };
 
 export function MobilityAgentPanel({
   recommendation,
+  explanation,
   loading,
   journeyLabel,
   recommendationUpdated,
+  onReplayVoice,
 }: MobilityAgentPanelProps) {
   return (
     <div className="overflow-hidden rounded-2xl border border-slate-700/50 bg-[#0c1017] shadow-xl shadow-black/20">
@@ -109,6 +116,33 @@ export function MobilityAgentPanel({
 
         {!loading && recommendation && (
           <>
+            {explanation && (
+              <>
+                <AgentSection
+                  title="Why this route?"
+                  icon={
+                    <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor">
+                      <path d="M6 0a6 6 0 100 12A6 6 0 006 0zm0 2.5a.9.9 0 110 1.8.9.9 0 010-1.8zM5.2 5h1.6v5H5.2V5z" />
+                    </svg>
+                  }
+                >
+                  <p className="rounded-lg border border-cyan-500/20 bg-cyan-950/20 px-3 py-2.5 text-slate-300">
+                    {renderMarkdownBold(explanation.uiText)}
+                  </p>
+                  {onReplayVoice && (
+                    <button
+                      type="button"
+                      onClick={onReplayVoice}
+                      className="mt-2 text-[11px] font-medium text-cyan-400 hover:text-cyan-300"
+                    >
+                      🔊 Ask voice guide again
+                    </button>
+                  )}
+                </AgentSection>
+                <div className="h-px bg-slate-800/80" />
+              </>
+            )}
+
             <AgentSection
               title="Route comparison"
               icon={
