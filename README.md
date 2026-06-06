@@ -95,7 +95,7 @@ layla/
 | `https://layla.ai-cloud.io/v1/` | vLLM `:18000` | OpenAI-compatible inference API |
 | `https://layla.ai-cloud.io/oui/` | Open WebUI `:8080` | OUI via subpath (may have asset issues) |
 | `https://layla-oui.ai-cloud.io/` | Open WebUI `:8081` | Open WebUI — stable root path |
-| `https://dev.ai-cloud.io/` | Caddy `:3002` → host `:3001` | Colleague dev frontend |
+| `https://layla-dev.ai-cloud.io/` | Caddy `:3002` → host `:3001` | Colleague dev frontend |
 
 All traffic flows through a **single named Cloudflare Tunnel** (`layla-hackathon`) → **Caddy reverse proxy** (Docker), which routes by hostname and path prefix.
 
@@ -116,7 +116,7 @@ flowchart LR
     CADDY -->|"layla.ai-cloud.io /*"| FE
     CADDY -->|"layla.ai-cloud.io /v1/*"| VLLM
     CADDY -->|"layla-oui.ai-cloud.io :8081"| OUI
-    CADDY -->|"dev.ai-cloud.io :3002"| DEV
+    CADDY -->|"layla-dev.ai-cloud.io :3002"| DEV
 
     classDef external fill:#1c1917,color:#d6d3d1,stroke:#78716c
     classDef runtime  fill:#0c4a6e,color:#7dd3fc,stroke:#0ea5e9
