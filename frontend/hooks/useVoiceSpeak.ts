@@ -40,6 +40,7 @@ function speakWithBrowserTts(text: string): Promise<void> {
 
 export function useVoiceSpeak() {
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const genRef = useRef(0); // bumps on every stop/speak so stale TTS fetches abort before playing
   const unlockedRef = useRef(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [speakError, setSpeakError] = useState<string | null>(null);
@@ -57,6 +58,7 @@ export function useVoiceSpeak() {
   }, []);
 
   const stop = useCallback(() => {
+    genRef.current += 1; // supersede any in-flight speak (incl. ones still fetching)
     audioRef.current?.pause();
     audioRef.current = null;
     setIsSpeaking(false);
@@ -71,8 +73,10 @@ export function useVoiceSpeak() {
       if (!trimmed) return;
 
       stop();
+      const myGen = genRef.current; // this call's generation (set after stop's bump)
       setSpeakError(null);
       await unlockAudio();
+      if (genRef.current !== myGen) return; // superseded while unlocking
 
       let usedFallback = false;
 
@@ -82,9 +86,11 @@ export function useVoiceSpeak() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ text: trimmed }),
         });
+        if (genRef.current !== myGen) return; // superseded while fetching → don't play
 
         if (res.ok) {
           const blob = await res.blob();
+          if (genRef.current !== myGen) return;
           if (blob.size > 0) {
             const url = URL.createObjectURL(blob);
             const audio = new Audio(url);
@@ -111,6 +117,7 @@ export function useVoiceSpeak() {
         }
 
         usedFallback = true;
+        if (genRef.current !== myGen) return; // superseded → skip fallback too
         setIsSpeaking(true);
         await speakWithBrowserTts(trimmed);
         setIsSpeaking(false);
