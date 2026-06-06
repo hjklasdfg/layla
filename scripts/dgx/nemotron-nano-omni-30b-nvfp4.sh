@@ -36,7 +36,7 @@ docker run -d --gpus all --ipc=host \
     --chat-template-kwargs "$THINKING_KWARGS" \
     --trust-remote-code \
     --moe-backend marlin \
-    --gpu-memory-utilization 0.58 \
+    --gpu-memory-utilization 0.40 \
     --enable-auto-tool-choice \
     --tool-call-parser hermes \
     --limit-mm-per-prompt '{"image": 1, "video": 1}' \
