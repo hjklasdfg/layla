@@ -45,7 +45,7 @@ export interface UseNavigationResult {
   lastGps: { lat: number; lng: number; accuracy?: number } | null;
   startNavigation: (
     coordinates: [number, number][],
-    opts?: { simulate?: boolean }
+    opts?: { simulate?: boolean; speedMps?: number }
   ) => Promise<void>;
   stopNavigation: () => void;
 }
@@ -102,12 +102,14 @@ export function useNavigation(): UseNavigationResult {
   // voice fires on a stationary laptop (no real GPS movement). 8 m steps stay
   // under the engine's 18 m alert band so no cue is skipped.
   const startSim = useCallback(
-    (path: Array<{ lat: number; lng: number }>) => {
+    (path: Array<{ lat: number; lng: number }>, speedMps = 3) => {
       if (simRef.current) clearInterval(simRef.current);
       let segIdx = 0;
       let segProg = 0;
-      const STEP_M = 8;
-      const TICK_MS = 280;
+      const TICK_MS = 600;
+      // walking ≈ 1.4 m/s; default 3 m/s = brisk, watchable, cues stay spaced.
+      // capped at 15 m so a step never exceeds the engine's 18 m alert band.
+      const STEP_M = Math.max(1, Math.min(15, speedMps * (TICK_MS / 1000)));
       processGps({ lat: path[0].lat, lng: path[0].lng, accuracyM: 5, timestamp: Date.now() });
       simRef.current = setInterval(() => {
         let remaining = STEP_M;
@@ -152,7 +154,10 @@ export function useNavigation(): UseNavigationResult {
   );
 
   const startNavigation = useCallback(
-    async (coordinates: [number, number][], opts?: { simulate?: boolean }) => {
+    async (
+      coordinates: [number, number][],
+      opts?: { simulate?: boolean; speedMps?: number }
+    ) => {
       if (!coordinates || coordinates.length < 2) {
         setError("Route has no usable geometry to navigate.");
         return;
@@ -187,7 +192,7 @@ export function useNavigation(): UseNavigationResult {
         if (opts?.simulate) {
           simulatingRef.current = true;
           setSimulating(true);
-          startSim(normalizeToShape(coordinates));
+          startSim(normalizeToShape(coordinates), opts.speedMps);
         } else {
           simulatingRef.current = false;
           setSimulating(false);
