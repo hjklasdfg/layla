@@ -1,12 +1,11 @@
 # Layla — Data Skill (interface spec)
 
-One skill the agent (NemoClaw) calls to access ingested City-of-London data AND
-to plan **scored, map-ready accessible routes**. We **ingest raw open data, fuse
-it locally**, and run a **per-persona weighted route search** over the fused
-graph (Approach A: different profile → different geometry).
+One skill the agent (NemoClaw) calls to access every **ingested** City-of-London
+data layer. We **ingest raw open data and fuse it locally**; **route planning is
+the sibling `layla-routing` skill** — `get_walkable_graph` hands it the fused
+graph to weight + search.
 
-Implementation: `layla_data_skill.py` (data tools) + `route_scoring.py` /
-`route_engine.py` (scored routing); pure-Python, JSON-serialisable I/O.
+Implementation: `layla_data_skill.py` (pure-Python core, JSON-serialisable I/O).
 
 ## Ingested data layers (raw → fused locally)
 
@@ -22,20 +21,6 @@ Implementation: `layla_data_skill.py` (data tools) + `route_scoring.py` /
 `bbox` = `(west, south, east, north)` in WGS84 lon/lat. Points are `lat, lon`.
 
 ## Functions
-
-### `get_scored_routes(start, end, profile="general") -> {start, end, recommended_id, routes[]}`  ← headline, map-ready
-Approach A — weighted path search on the fused graph → **different geometry per persona**, each scored.
-`start`/`end` = City place name | `"lat,lon"` | `(lat,lon)`. `profile` ∈ `general|blind|wheelchair|elderly|night_safety`.
-Each route is frontend `MobilityRouteState`-compatible:
-```
-{ id, variant, start:{lat,lng}, end:{lat,lng}, etaMin, distanceM,
-  geometry:{ coordinates:[[lat,lng],...] },            // Leaflet order
-  score, signals:{accessibility,safety,comfort}, evidence[],
-  mapFeatures:{crossings,steps,tactilePaving,riskPoints} }
-```
-`recommended_id` = the route planned with the profile's own weights. Scoring reuses the
-frontend rules (`services/osm/normalize.ts`: steps/tactile/crossing penalties) + our fused
-layers (crime → safety, noise/lighting → comfort). Implemented in `route_scoring.py`.
 
 ### `get_accessibility(bbox) -> {count, features[]}`
 Accessibility points in box. `features[i] = {lat, lon, category, tags}`.

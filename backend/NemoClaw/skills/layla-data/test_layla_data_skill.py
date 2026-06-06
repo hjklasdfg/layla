@@ -11,7 +11,6 @@ Run:
 import os, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import layla_data_skill as data
-import route_scoring as rs
 
 CORRIDOR = (-0.100, 51.515, -0.090, 51.522)   # (w, s, e, n)
 BARBICAN = (51.5203, -0.0972)                  # (lat, lon)
@@ -90,33 +89,6 @@ def test_road_disruptions_structure_and_bbox():
     if r["source"] == "live":
         city = (-0.115, 51.508, -0.078, 51.530)
         assert data.get_road_disruptions(city)["count"] <= r["count"]
-
-
-# ---------- scored routing (Approach A) ----------
-def test_scored_routes_are_map_ready():
-    r = rs.get_scored_routes("barbican", "st pauls", "wheelchair")
-    assert r.get("routes"), "expected at least one route"
-    rt = next(x for x in r["routes"] if x["id"] == r["recommended_id"])
-    coords = rt["geometry"]["coordinates"]
-    assert coords and len(coords[0]) == 2
-    lat, lng = coords[0]                              # Leaflet order [lat, lng]
-    assert 51 < lat < 52 and -0.2 < lng < 0.1
-    for k in ("score", "signals", "etaMin", "distanceM", "evidence", "mapFeatures"):
-        assert k in rt
-    for s in ("accessibility", "safety", "comfort"):
-        assert 0 <= rt["signals"][s] <= 100
-
-def test_recommended_is_personalized():
-    r = rs.get_scored_routes("barbican", "st pauls", "blind")
-    rec = next(x for x in r["routes"] if x["id"] == r["recommended_id"])
-    assert rec["variant"] == "personalized"
-
-def test_routes_differ_by_profile():
-    a = rs.get_scored_routes("barbican", "st pauls", "wheelchair")
-    b = rs.get_scored_routes("barbican", "st pauls", "night_safety")
-    ga = next(x for x in a["routes"] if x["id"] == a["recommended_id"])["geometry"]["coordinates"]
-    gb = next(x for x in b["routes"] if x["id"] == b["recommended_id"])["geometry"]["coordinates"]
-    assert ga != gb, "wheelchair and night-safety routes should differ in geometry"
 
 
 # ---------- standalone runner (no pytest needed) ----------
