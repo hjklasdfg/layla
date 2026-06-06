@@ -134,11 +134,30 @@ function extractPoint(
   return [point.lat, point.lon];
 }
 
+type TfLLineStringInput = NonNullable<TfLJourneyLeg["path"]>["lineString"];
+
+function parseLegLineString(
+  lineString: TfLLineStringInput | undefined
+): Array<{ lat?: number; lon?: number } | [number, number]> {
+  if (!lineString) return [];
+
+  if (typeof lineString === "string") {
+    try {
+      const parsed = JSON.parse(lineString) as unknown;
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+
+  return lineString;
+}
+
 function extractJourneyGeometry(journey: TfLRawJourney): [number, number][] {
   const coords: [number, number][] = [];
 
   for (const leg of journey.legs ?? []) {
-    for (const point of leg.path?.lineString ?? []) {
+    for (const point of parseLegLineString(leg.path?.lineString)) {
       const parsed = extractPoint(point);
       if (!parsed) continue;
       const prev = coords[coords.length - 1];
@@ -240,6 +259,15 @@ function composeSignals(
     case "elderly":
       accessibility = clamp(accessibility + 4);
       stress = clamp(stress + candidate.walkingMinutes * 0.8);
+      break;
+    case "sensitive":
+      crowding = clamp(crowding + 10);
+      stress = clamp(stress + 6);
+      predictability = clamp(predictability + 5);
+      break;
+    case "tourist":
+      stress = clamp(stress - 4);
+      predictability = clamp(predictability + 3);
       break;
     case "custom":
     case "general":

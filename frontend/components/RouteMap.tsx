@@ -14,6 +14,7 @@ import L from "leaflet";
 import type { FeatureCollection } from "geojson";
 import type { CrimeIncident, CrimeIncidentMeta } from "@/lib/crime/types";
 import type { MobilityRouteState } from "@/lib/mobilityEngine";
+import type { PersonaRoutePick } from "@/lib/mobility/persona-routes";
 import {
   AccessibilityLayer,
   EndpointMarker,
@@ -83,6 +84,8 @@ export interface RouteMapProps {
   highContrast?: boolean;
   crimeIncidents?: CrimeIncident[];
   crimeMeta?: CrimeIncidentMeta | null;
+  /** One highlighted path per traveller persona */
+  personaRoutes?: PersonaRoutePick[];
 }
 
 function endpointsForRoute(route: MobilityRouteState | undefined): {
@@ -256,9 +259,11 @@ export function RouteMap({
   highContrast: highContrastProp = false,
   crimeIncidents = [],
   crimeMeta = null,
+  personaRoutes = [],
 }: RouteMapProps) {
   const [layers, setLayers] = useState<MapLayerVisibility>(DEFAULT_LAYERS);
   const highContrast = highContrastProp;
+  const multiPersona = personaRoutes.length > 0;
 
   const activeRoute = useMemo(() => {
     if (!routes.length) return undefined;
@@ -333,11 +338,15 @@ export function RouteMap({
     const crimeCoords = crimeLocations.map(
       (incident) => [incident.latitude, incident.longitude] as [number, number]
     );
-    const allCoords = [...routeCoords, ...markerCoords, ...crimeCoords];
+    const personaCoords = personaRoutes.flatMap((pick) => {
+      const route = routes.find((r) => r.id === pick.routeId);
+      return route?.geometry.coordinates ?? [];
+    });
+    const allCoords = [...routeCoords, ...markerCoords, ...crimeCoords, ...personaCoords];
 
     if (allCoords.length === 0) return null;
     return L.latLngBounds(allCoords);
-  }, [activeRoute, crimeLocations, end, routes.length, start]);
+  }, [activeRoute, crimeLocations, end, personaRoutes, routes.length, start]);
 
   const mapCenter = useMemo((): [number, number] => {
     if (start) return [start.lat, start.lng];
@@ -462,7 +471,7 @@ export function RouteMap({
         {layers.routes &&
           routes.map((route) => {
             const isSelected =
-              !selectedRouteId || route.id === selectedRouteId;
+              !multiPersona && (!selectedRouteId || route.id === selectedRouteId);
             const color = ROUTE_COLORS[route.id] ?? "#94a3b8";
             return (
               <Polyline
@@ -471,7 +480,7 @@ export function RouteMap({
                 pathOptions={{
                   color,
                   weight: isSelected ? 6 : 3,
-                  opacity: isSelected ? 0.95 : 0.45,
+                  opacity: multiPersona ? 0.22 : isSelected ? 0.95 : 0.45,
                   lineCap: "round",
                   lineJoin: "round",
                 }}
@@ -481,6 +490,30 @@ export function RouteMap({
               >
                 <Tooltip sticky className="!text-xs !font-semibold">
                   {route.name ?? `Route ${route.id}`} · {route.etaMin} min
+                </Tooltip>
+              </Polyline>
+            );
+          })}
+
+        {layers.routes &&
+          personaRoutes.map((pick) => {
+            const route = routes.find((r) => r.id === pick.routeId);
+            if (!route) return null;
+            return (
+              <Polyline
+                key={`${mapRevision}-persona-${pick.profile}`}
+                positions={route.geometry.coordinates}
+                pathOptions={{
+                  color: pick.color,
+                  weight: 7,
+                  opacity: 0.92,
+                  lineCap: "round",
+                  lineJoin: "round",
+                  dashArray: pick.dashArray,
+                }}
+              >
+                <Tooltip sticky className="!text-xs !font-semibold">
+                  {pick.label} → Route {pick.routeId} · {route.etaMin} min
                 </Tooltip>
               </Polyline>
             );
@@ -502,29 +535,44 @@ export function RouteMap({
       </MapContainer>
 
       <div className="flex flex-wrap gap-3 border-t border-slate-700/50 bg-slate-950/80 px-3 py-2">
-        {routes.map((route) => {
-          const color = ROUTE_COLORS[route.id] ?? "#94a3b8";
-          const active = route.id === selectedRouteId;
-          return (
-            <button
-              key={route.id}
-              type="button"
-              onClick={() => onRouteSelect?.(route.id)}
-              className={`flex items-center gap-2 rounded-md px-2 py-1 text-xs font-medium transition ${
-                active
-                  ? "bg-cyan-500/20 text-cyan-200 ring-1 ring-cyan-500/40"
-                  : "text-slate-400 hover:text-slate-200"
-              }`}
-              aria-pressed={active}
+        {personaRoutes.length > 0 ? (
+          personaRoutes.map((pick) => (
+            <span
+              key={pick.profile}
+              className="flex items-center gap-2 rounded-md border border-slate-700/60 bg-slate-900/60 px-2 py-1 text-xs text-slate-200"
             >
               <span
                 className="h-2.5 w-6 rounded-full"
-                style={{ backgroundColor: color }}
+                style={{ backgroundColor: pick.color }}
               />
-              {route.name ?? `Route ${route.id}`} · {route.etaMin} min
-            </button>
-          );
-        })}
+              {pick.label} → Route {pick.routeId}
+            </span>
+          ))
+        ) : (
+          routes.map((route) => {
+            const color = ROUTE_COLORS[route.id] ?? "#94a3b8";
+            const active = route.id === selectedRouteId;
+            return (
+              <button
+                key={route.id}
+                type="button"
+                onClick={() => onRouteSelect?.(route.id)}
+                className={`flex items-center gap-2 rounded-md px-2 py-1 text-xs font-medium transition ${
+                  active
+                    ? "bg-cyan-500/20 text-cyan-200 ring-1 ring-cyan-500/40"
+                    : "text-slate-400 hover:text-slate-200"
+                }`}
+                aria-pressed={active}
+              >
+                <span
+                  className="h-2.5 w-6 rounded-full"
+                  style={{ backgroundColor: color }}
+                />
+                {route.name ?? `Route ${route.id}`} · {route.etaMin} min
+              </button>
+            );
+          })
+        )}
         {hasCrimeLayer && crimeMeta && (
           <span className="self-center rounded-md border border-orange-400/25 bg-orange-500/10 px-2 py-1 text-[10px] font-medium text-orange-100">
             Crime map · {crimeMeta.mappedCount} mapped ·{" "}

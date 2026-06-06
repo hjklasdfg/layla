@@ -74,9 +74,6 @@ export function pickBestDisambiguationOption(
 }
 
 function stopToJourneySegment(stop: StopPointSummary): string {
-  if (stop.id.startsWith("HUB") || stop.id.startsWith("940")) {
-    return encodeJourneyLocation(stop.id);
-  }
   if (stop.lat !== undefined && stop.lon !== undefined) {
     return encodeJourneyLocation(`${stop.lat},${stop.lon}`);
   }

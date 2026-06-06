@@ -57,7 +57,7 @@ export const serverEnv = {
       return Boolean(this.apiKey);
     },
   },
-  llmProvider: readEnv("LLM_PROVIDER") || "nemotron",
+  llmProvider: readEnv("LLM_PROVIDER") || "gemini",
   backend: {
     apiUrl: readEnv("BACKEND_API_URL"),
     apiKey: readEnv("BACKEND_API_KEY"),
@@ -86,7 +86,7 @@ export function tflQueryParams(): string {
 }
 
 export const publicEnv = {
-  llmProvider: readEnv("NEXT_PUBLIC_LLM_PROVIDER") || "nemotron",
+  llmProvider: readEnv("NEXT_PUBLIC_LLM_PROVIDER") || "gemini",
   elevenlabsAgentId: readEnv("NEXT_PUBLIC_ELEVENLABS_AGENT_ID"),
   /** Voice input via ElevenLabs Scribe (set true when ELEVENLABS_API_KEY is configured). */
   voiceEnabled:

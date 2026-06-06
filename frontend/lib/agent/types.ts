@@ -1,7 +1,14 @@
 import type { EnrichedRoute } from "@/lib/accessibility/types";
 import type { MobilitySensorPayload } from "@/lib/mobility/sensors";
 
-export type UserProfile = "general" | "blind" | "wheelchair" | "elderly" | "custom";
+export type UserProfile =
+  | "general"
+  | "blind"
+  | "wheelchair"
+  | "elderly"
+  | "sensitive"
+  | "tourist"
+  | "custom";
 
 export type UserPriority =
   | "fastest"
@@ -10,7 +17,10 @@ export type UserPriority =
   | "most_reliable";
 
 export interface UserPreference {
+  /** Primary profile — used by LLM and legacy single-persona flows */
   profile: UserProfile;
+  /** When set, Layla ranks and maps a best route per persona */
+  profiles?: UserProfile[];
   priority: UserPriority;
   customNotes?: string;
 }
@@ -51,8 +61,24 @@ export const PROFILE_LABELS: Record<UserProfile, string> = {
   blind: "Blind / Low vision",
   wheelchair: "Wheelchair user",
   elderly: "Elderly",
+  sensitive: "Sensitive traveller",
+  tourist: "City walk / Tourist",
   custom: "Custom needs",
 };
+
+/** Personas shown as multi-select checkboxes in the journey planner */
+export const SELECTABLE_PERSONAS: UserProfile[] = [
+  "blind",
+  "wheelchair",
+  "elderly",
+  "sensitive",
+  "tourist",
+];
+
+export function activeProfiles(preference: Pick<UserPreference, "profile" | "profiles">): UserProfile[] {
+  if (preference.profiles?.length) return preference.profiles;
+  return [preference.profile];
+}
 
 export const PRIORITY_LABELS: Record<UserPriority, string> = {
   fastest: "Fastest",
@@ -78,6 +104,9 @@ export function buildRecommendationUserPrompt(context: MobilityAgentContext): st
   return [
     `Journey: ${journey.start} → ${journey.destination}`,
     `User profile: ${PROFILE_LABELS[preference.profile]}`,
+    preference.profiles?.length
+      ? `All travellers: ${preference.profiles.map((p) => PROFILE_LABELS[p]).join(", ")}`
+      : "",
     `Priority: ${PRIORITY_LABELS[preference.priority]}`,
     preference.customNotes ? `Custom notes: ${preference.customNotes}` : "",
     "",

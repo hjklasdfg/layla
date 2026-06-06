@@ -68,6 +68,7 @@ interface RouteCardProps {
   isSelected?: boolean;
   onSelect?: () => void;
   prevSignals?: AccessibilitySignals;
+  personaLabels?: string[];
 }
 
 export function RouteCard({
@@ -76,6 +77,7 @@ export function RouteCard({
   isSelected,
   onSelect,
   prevSignals,
+  personaLabels = [],
 }: RouteCardProps) {
   const { signals } = route;
 
@@ -102,6 +104,19 @@ export function RouteCard({
         <span className="absolute -top-3 left-4 rounded-full bg-cyan-500 px-3 py-0.5 text-[11px] font-semibold uppercase tracking-wider text-slate-950">
           Recommended
         </span>
+      )}
+
+      {personaLabels.length > 0 && (
+        <div className="mb-2 flex flex-wrap gap-1.5 pt-1">
+          {personaLabels.map((label) => (
+            <span
+              key={label}
+              className="rounded-full border border-cyan-500/30 bg-cyan-500/10 px-2 py-0.5 text-[10px] font-medium text-cyan-200"
+            >
+              Best for {label}
+            </span>
+          ))}
+        </div>
       )}
 
       <header className="mb-4 flex items-start justify-between gap-3 pt-1">

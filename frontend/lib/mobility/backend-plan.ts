@@ -27,13 +27,18 @@ function buildLocalExplanation(
   preference: UserPreference,
   journey: { start: string; destination: string }
 ): RouteExplanation {
+  const profileLine =
+    preference.profiles && preference.profiles.length > 1
+      ? preference.profiles.map((p) => PROFILE_LABELS[p]).join(", ")
+      : PROFILE_LABELS[preference.profile];
+
   const uiText = [
     `**Why Route ${recommendation.recommendedRouteId}?**`,
     recommendation.tradeoffExplanation,
     "",
     recommendation.finalRecommendation,
     "",
-    `_Based on your **${PROFILE_LABELS[preference.profile]}** profile and **${PRIORITY_LABELS[preference.priority]}** priority for ${journey.start} → ${journey.destination}._`,
+    `_Based on **${profileLine}** and **${PRIORITY_LABELS[preference.priority]}** priority for ${journey.start} → ${journey.destination}._`,
   ].join("\n");
 
   const voiceText = recommendation.finalRecommendation
@@ -104,15 +109,40 @@ export async function requestBackendMobilityPlan(
     const provider = serverEnv.llmProvider;
 
     if (provider === "gemini" && serverEnv.gemini.enabled) {
-      return requestGeminiMobilityPlan(request);
+      try {
+        return await requestGeminiMobilityPlan(request);
+      } catch (err) {
+        console.warn("[mobility] Gemini plan failed, using local fallback:", err);
+        return buildLocalPlanFallback(request);
+      }
     }
 
     if (serverEnv.nemotron.enabled) {
-      return requestNemotronMobilityPlan(request);
+      try {
+        return await requestNemotronMobilityPlan(request);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        console.warn("[mobility] Nemotron plan failed, using local fallback:", message);
+
+        if (serverEnv.gemini.enabled) {
+          try {
+            return await requestGeminiMobilityPlan(request);
+          } catch (geminiErr) {
+            console.warn("[mobility] Gemini fallback failed:", geminiErr);
+          }
+        }
+
+        return buildLocalPlanFallback(request);
+      }
     }
 
     if (serverEnv.gemini.enabled) {
-      return requestGeminiMobilityPlan(request);
+      try {
+        return await requestGeminiMobilityPlan(request);
+      } catch (err) {
+        console.warn("[mobility] Gemini plan failed, using local fallback:", err);
+        return buildLocalPlanFallback(request);
+      }
     }
 
     return buildLocalPlanFallback(request);

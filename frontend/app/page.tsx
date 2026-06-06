@@ -1,25 +1,25 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { CameraPanel, type CameraPanelHandle } from "@/components/CameraPanel";
 import { isCameraOffCommand, isCameraOnCommand } from "@/lib/camera/voice-commands";
-import { ChangeTimeline } from "@/components/ChangeTimeline";
-import { GeminiInputPanel, type ClientPlanPreview } from "@/components/GeminiInputPanel";
-import type { LlmPlanInput } from "@/lib/mobility/llm-plan-prompt";
-import { EventSimulator } from "@/components/EventSimulator";
 import { MobilityAgentPanel } from "@/components/MobilityAgentPanel";
 import { NavigationPanel } from "@/components/NavigationPanel";
 import { VoicePanel, type VoicePanelHandle } from "@/components/VoicePanel";
 import { RouteCard } from "@/components/RouteCard";
-import type { MobilityRecommendation, UserPreference } from "@/lib/agent/types";
-import { PRIORITY_LABELS, PROFILE_LABELS } from "@/lib/agent/types";
+import type { MobilityRecommendation, UserPreference, UserProfile } from "@/lib/agent/types";
+import {
+  PRIORITY_LABELS,
+  PROFILE_LABELS,
+  SELECTABLE_PERSONAS,
+} from "@/lib/agent/types";
+import { computePersonaRoutePicks } from "@/lib/mobility/persona-routes";
 import type {
   CrimeIncident,
   CrimeIncidentMeta,
   CrimeIncidentResponse,
 } from "@/lib/crime/types";
-import type { CityEventType } from "@/lib/events/types";
 import type { CameraDataItem } from "@/lib/mobility/sensors";
 import type { RouteExplanation } from "@/lib/mobility/plan";
 import {
@@ -30,7 +30,6 @@ import {
 import { useGeolocation } from "@/hooks/useGeolocation";
 import { useLiveRoutes } from "@/hooks/useLiveRoutes";
 import { useNavigation } from "@/hooks/useNavigation";
-import type { MobilityRouteState } from "@/lib/mobilityEngine";
 
 const RouteMap = dynamic(
   () => import("@/components/RouteMap").then((m) => m.RouteMap),
@@ -43,14 +42,6 @@ const RouteMap = dynamic(
     ),
   }
 );
-
-const USER_PROFILES: { value: UserPreference["profile"]; label: string }[] = [
-  { value: "general", label: PROFILE_LABELS.general },
-  { value: "blind", label: PROFILE_LABELS.blind },
-  { value: "wheelchair", label: PROFILE_LABELS.wheelchair },
-  { value: "elderly", label: PROFILE_LABELS.elderly },
-  { value: "custom", label: PROFILE_LABELS.custom },
-];
 
 const PREFERENCES: { value: UserPreference["priority"]; label: string }[] = [
   { value: "fastest", label: PRIORITY_LABELS.fastest },
@@ -104,21 +95,21 @@ export default function Home() {
     mobilityRoutes,
     routesMeta,
     prevSignals,
-    timeline,
     recommendationUpdated,
-    isSimulating,
     isSearching,
     fetchError,
     canRetry,
     runMobilityPlan,
-    simulateEvent,
     clearRecommendationUpdated,
     clearError,
   } = useLiveRoutes();
 
   const [start, setStart] = useState("");
   const [destination, setDestination] = useState("");
-  const [profile, setProfile] = useState<UserPreference["profile"]>("general");
+  const [selectedProfiles, setSelectedProfiles] = useState<UserProfile[]>([
+    "wheelchair",
+  ]);
+  const [useCustomPersona, setUseCustomPersona] = useState(false);
   const [priority, setPriority] =
     useState<UserPreference["priority"]>("most_accessible");
   const [customNotes, setCustomNotes] = useState("");
@@ -130,14 +121,7 @@ export default function Home() {
   const [routeExplanation, setRouteExplanation] = useState<RouteExplanation | null>(
     null
   );
-  const [planClientPreview, setPlanClientPreview] = useState<ClientPlanPreview | null>(
-    null
-  );
-  const [llmInput, setLlmInput] = useState<LlmPlanInput | null>(null);
   const [selectedRouteId, setSelectedRouteId] = useState<string | null>(null);
-  const [personaRoutes, setPersonaRoutes] = useState<MobilityRouteState[]>([]);
-  const [compareLoading, setCompareLoading] = useState(false);
-  const [compareError, setCompareError] = useState<string | null>(null);
   const [highContrastMap, setHighContrastMap] = useState(false);
   const [crimeIncidents, setCrimeIncidents] = useState<CrimeIncident[]>([]);
   const [crimeMeta, setCrimeMeta] = useState<CrimeIncidentMeta | null>(null);
@@ -155,11 +139,46 @@ export default function Home() {
   const cameraRef = useRef<CameraPanelHandle>(null);
   const planningInFlightRef = useRef(false);
 
+  const activePersonas: UserProfile[] = useMemo(() => {
+    if (useCustomPersona) return ["custom"];
+    if (selectedProfiles.length) return selectedProfiles;
+    return ["general"];
+  }, [selectedProfiles, useCustomPersona]);
+
   const preference: UserPreference = {
-    profile,
+    profile: activePersonas[0] ?? "general",
+    profiles: activePersonas.length > 1 ? activePersonas : undefined,
     priority,
     ...(customNotes.trim() ? { customNotes: customNotes.trim() } : {}),
   };
+
+  const personaRoutePicks = useMemo(() => {
+    if (!routes.length) return [];
+    if (activePersonas[0] === "custom" || activePersonas[0] === "general") return [];
+    return computePersonaRoutePicks(routes, activePersonas, priority);
+  }, [routes, activePersonas, priority]);
+
+  function togglePersona(persona: UserProfile) {
+    setUseCustomPersona(false);
+    setSelectedProfiles((prev) => {
+      if (prev.includes(persona)) {
+        const next = prev.filter((p) => p !== persona);
+        return next.length ? next : [persona];
+      }
+      return [...prev, persona];
+    });
+  }
+
+  function enableCustomPersona() {
+    setUseCustomPersona(true);
+  }
+
+  function enableSelectablePersonas() {
+    setUseCustomPersona(false);
+    if (!selectedProfiles.length) {
+      setSelectedProfiles(["wheelchair"]);
+    }
+  }
   const journeyLabel =
     start && destination ? `${start} → ${destination}` : undefined;
 
@@ -177,35 +196,26 @@ export default function Home() {
     setAgentLoading(true);
     setRecommendation(null);
     setRouteExplanation(null);
-    setLlmInput(null);
     setJourneyMarkers({});
     setMapRevision(`pending-${Date.now()}`);
     clearRecommendationUpdated();
     clearError();
 
     const planPreference: UserPreference = {
-      profile: options.profileOverride ?? profile,
+      profile: options.profileOverride ?? preference.profile,
+      profiles: options.profileOverride
+        ? [options.profileOverride]
+        : preference.profiles,
       priority,
       ...(customNotes.trim() ? { customNotes: customNotes.trim() } : {}),
     };
 
-    if (options.profileOverride && options.profileOverride !== profile) {
-      setProfile(options.profileOverride);
+    if (options.profileOverride) {
+      setUseCustomPersona(false);
+      setSelectedProfiles([options.profileOverride]);
     }
 
     if (options.audioInput) {
-      setPlanClientPreview({
-        trigger: "voice",
-        audioInput: options.audioInput,
-        journey: options.journey,
-        preference: {
-          profile: planPreference.profile,
-          priority: planPreference.priority,
-          ...(planPreference.customNotes
-            ? { customNotes: planPreference.customNotes }
-            : {}),
-        },
-      });
       voiceRef.current?.notifyPlanningStarted(
         options.journey?.start && options.journey?.destination
           ? {
@@ -214,20 +224,6 @@ export default function Home() {
             }
           : undefined
       );
-    } else if (options.journey?.start && options.journey?.destination) {
-      setPlanClientPreview({
-        trigger: "form",
-        journey: options.journey,
-        preference: {
-          profile: planPreference.profile,
-          priority: planPreference.priority,
-          ...(planPreference.customNotes
-            ? { customNotes: planPreference.customNotes }
-            : {}),
-        },
-      });
-    } else {
-      setPlanClientPreview(null);
     }
 
     try {
@@ -251,10 +247,6 @@ export default function Home() {
       setSelectedRouteId(result.recommendation.recommendedRouteId);
       setRecommendation(result.recommendation);
       setRouteExplanation(result.explanation);
-      const sent = result.meta.llmInput ?? result.meta.geminiInput;
-      if (sent) {
-        setLlmInput(sent);
-      }
       voiceRef.current?.announceRouteExplanation(
         result.explanation,
         result.recommendation,
@@ -277,39 +269,12 @@ export default function Home() {
 
   async function handleCompare() {
     if (!start.trim() || !destination.trim()) return;
-    setPersonaRoutes([]); // leave persona-overlay mode
-    setCompareError(null);
     await runPlan({
       journey: {
         start: start.trim(),
         destination: destination.trim(),
       },
     });
-  }
-
-  async function handleComparePersonas() {
-    if (!start.trim() || !destination.trim()) return;
-    setCompareLoading(true);
-    setCompareError(null);
-    try {
-      const res = await fetch("/api/mobility/compare", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          journey: { start: start.trim(), destination: destination.trim() },
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok || data.error) {
-        throw new Error(data.error || `compare failed (${res.status})`);
-      }
-      setPersonaRoutes((data.routes as MobilityRouteState[]) ?? []);
-    } catch (e) {
-      setCompareError(e instanceof Error ? e.message : "Persona compare failed");
-      setPersonaRoutes([]);
-    } finally {
-      setCompareLoading(false);
-    }
   }
 
   async function handleVoiceInput(text: string) {
@@ -329,7 +294,8 @@ export default function Home() {
 
     const voiceIntent = parseVoiceIntent(text);
     if (voiceIntent.profile) {
-      setProfile(voiceIntent.profile);
+      setUseCustomPersona(false);
+      setSelectedProfiles([voiceIntent.profile]);
     }
 
     if (!shouldTriggerMobilityPlan(text)) {
@@ -356,38 +322,6 @@ export default function Home() {
   async function handleRetry() {
     clearError();
     await handleCompare();
-  }
-
-  async function handleSimulateEvent(eventType: CityEventType) {
-    if (!compared) return;
-    setAgentLoading(true);
-    clearRecommendationUpdated();
-    const result = await simulateEvent(
-      eventType,
-      {
-        gps: gpsLocation,
-        cameraData,
-        preference,
-        journey: { start: start.trim(), destination: destination.trim() },
-      },
-      recommendation
-    );
-    if (result.recommendation) setRecommendation(result.recommendation);
-    if (result.explanation) setRouteExplanation(result.explanation);
-    if (result.explanation && result.recommendation) {
-      voiceRef.current?.announceRouteExplanation(
-        result.explanation,
-        result.recommendation,
-        {
-          journey: { start: start.trim(), destination: destination.trim() },
-          preference: {
-            profile: preference.profile,
-            priority: preference.priority,
-          },
-        }
-      );
-    }
-    setAgentLoading(false);
   }
 
   async function handleCrimeMapToggle() {
@@ -430,8 +364,8 @@ export default function Home() {
   const inputClass =
     "w-full rounded-lg border border-slate-700/80 bg-slate-900/80 px-3 py-2.5 text-sm text-white placeholder:text-slate-500 outline-none transition focus:border-cyan-500/60 focus:ring-1 focus:ring-cyan-500/30";
 
-  const busy = agentLoading || isSearching || isSimulating;
-  const showMap = mobilityRoutes.length > 0 || personaRoutes.length > 0;
+  const busy = agentLoading || isSearching;
+  const showMap = mobilityRoutes.length > 0;
 
   return (
     <div className="min-h-screen">
@@ -495,32 +429,66 @@ export default function Home() {
                     className={inputClass}
                   />
                 </label>
-                <label className="block">
-                  <span className="mb-1.5 block text-xs text-slate-400">
-                    User Profile
-                  </span>
-                  <select
-                    value={profile}
-                    onChange={(e) =>
-                      setProfile(e.target.value as UserPreference["profile"])
-                    }
-                    className={inputClass}
-                  >
-                    {USER_PROFILES.map((p) => (
-                      <option key={p.value} value={p.value}>
-                        {p.label}
-                      </option>
-                    ))}
-                  </select>
-                  {profile === "general" && (
-                    <p className="mt-1.5 text-[11px] leading-snug text-slate-500">
-                      No fixed accessibility persona — your{" "}
-                      <span className="text-cyan-400/90">Preference</span> drives
-                      route ranking and recommendations.
+                <fieldset className="block">
+                  <legend className="mb-2 block text-xs text-slate-400">
+                    Travellers (tick all that apply)
+                  </legend>
+                  <div className="space-y-2 rounded-lg border border-slate-700/80 bg-slate-900/50 p-3">
+                    {SELECTABLE_PERSONAS.map((persona) => {
+                      const checked =
+                        !useCustomPersona && selectedProfiles.includes(persona);
+                      return (
+                        <label
+                          key={persona}
+                          className={`flex cursor-pointer items-center gap-2.5 rounded-md px-2 py-1.5 text-sm transition ${
+                            checked
+                              ? "bg-cyan-500/10 text-cyan-100"
+                              : "text-slate-300 hover:bg-slate-800/60"
+                          }`}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            disabled={useCustomPersona}
+                            onChange={() => togglePersona(persona)}
+                            className="h-4 w-4 accent-cyan-400"
+                          />
+                          {PROFILE_LABELS[persona]}
+                        </label>
+                      );
+                    })}
+                    <label
+                      className={`flex cursor-pointer items-center gap-2.5 rounded-md border-t border-slate-700/60 px-2 pt-2 text-sm ${
+                        useCustomPersona
+                          ? "bg-violet-500/10 text-violet-100"
+                          : "text-slate-300"
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={useCustomPersona}
+                        onChange={(e) =>
+                          e.target.checked ? enableCustomPersona() : enableSelectablePersonas()
+                        }
+                        className="h-4 w-4 accent-violet-400"
+                      />
+                      {PROFILE_LABELS.custom}
+                    </label>
+                  </div>
+                  {personaRoutePicks.length > 0 && (
+                    <p className="mt-1.5 text-[11px] leading-snug text-cyan-400/90">
+                      {personaRoutePicks.length > 1
+                        ? "Map shows a recommended path per traveller (coloured lines)."
+                        : "Map highlights the best route for your selected traveller."}
                     </p>
                   )}
-                </label>
-                {profile === "custom" && (
+                  {!useCustomPersona && selectedProfiles.length === 1 && (
+                    <p className="mt-1.5 text-[11px] leading-snug text-slate-500">
+                      Tick more personas to compare routes for a group on the map.
+                    </p>
+                  )}
+                </fieldset>
+                {useCustomPersona && (
                   <label className="block">
                     <span className="mb-1.5 block text-xs text-slate-400">
                       Describe your needs
@@ -541,8 +509,8 @@ export default function Home() {
                 <label className="block">
                   <span className="mb-1.5 block text-xs text-slate-400">
                     Preference
-                    {profile === "general" || profile === "custom" ? (
-                      <span className="ml-1 text-cyan-500/80">· primary</span>
+                    {useCustomPersona ? (
+                      <span className="ml-1 text-violet-500/80">· primary</span>
                     ) : null}
                   </span>
                   <select
@@ -567,21 +535,10 @@ export default function Home() {
                 >
                   {isSearching
                     ? "Fetching TfL routes…"
-                    : agentLoading && !isSimulating
+                    : agentLoading
                       ? "Analysing…"
                       : "Compare Routes"}
                 </button>
-                <button
-                  type="button"
-                  onClick={handleComparePersonas}
-                  disabled={!start.trim() || !destination.trim() || compareLoading}
-                  className="w-full rounded-lg border border-cyan-500/40 py-2.5 text-sm font-semibold text-cyan-300 transition hover:bg-cyan-500/10 disabled:cursor-not-allowed disabled:opacity-40"
-                >
-                  {compareLoading ? "Comparing personas…" : "Compare personas"}
-                </button>
-                {compareError && (
-                  <p className="text-[11px] text-red-300">{compareError}</p>
-                )}
               </div>
             </div>
 
@@ -620,22 +577,6 @@ export default function Home() {
               <TfLStatusBanner meta={routesMeta} />
             )}
 
-            {compared && (
-              <EventSimulator
-                onSimulate={handleSimulateEvent}
-                disabled={!compared || !!fetchError}
-                loading={busy}
-              />
-            )}
-
-            {(compared || agentLoading || planClientPreview || llmInput) && (
-              <GeminiInputPanel
-                loading={agentLoading || isSearching}
-                clientPreview={planClientPreview}
-                llmInput={llmInput}
-              />
-            )}
-
             {(compared || agentLoading) && (
               <MobilityAgentPanel
                 recommendation={recommendation}
@@ -661,8 +602,6 @@ export default function Home() {
                 }
               />
             )}
-
-            {timeline.length > 0 && <ChangeTimeline entries={timeline} />}
           </section>
 
           <section className="space-y-4 lg:col-span-8">
@@ -686,8 +625,8 @@ export default function Home() {
 
             {showMap ? (
               <RouteMap
-                routes={personaRoutes.length ? personaRoutes : mobilityRoutes}
-                selectedRouteId={personaRoutes.length ? null : highlightedRouteId}
+                routes={mobilityRoutes}
+                selectedRouteId={highlightedRouteId}
                 onRouteSelect={setSelectedRouteId}
                 startLabel={start || journeyMarkers.start?.name || "Start"}
                 endLabel={destination || journeyMarkers.end?.name || "Destination"}
@@ -697,6 +636,7 @@ export default function Home() {
                 highContrast={highContrastMap}
                 crimeIncidents={crimeLayerVisible ? crimeIncidents : []}
                 crimeMeta={crimeLayerVisible ? crimeMeta : null}
+                personaRoutes={personaRoutePicks}
               />
             ) : (
               <MapPlaceholder routeCount={routes.length} />
@@ -730,7 +670,11 @@ export default function Home() {
               </div>
             ) : (
               <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-                {routes.map((route) => (
+                {routes.map((route) => {
+                  const personaLabels = personaRoutePicks
+                    .filter((pick) => pick.routeId === route.routeId)
+                    .map((pick) => pick.label);
+                  return (
                   <RouteCard
                     key={route.routeId}
                     route={route}
@@ -738,8 +682,10 @@ export default function Home() {
                     prevSignals={prevSignals[route.routeId]}
                     isSelected={route.routeId === highlightedRouteId}
                     onSelect={() => setSelectedRouteId(route.routeId)}
+                    personaLabels={personaLabels}
                   />
-                ))}
+                  );
+                })}
               </div>
             )}
           </section>
