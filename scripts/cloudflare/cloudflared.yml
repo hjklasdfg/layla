@@ -6,4 +6,8 @@ ingress:
     service: http://localhost:80
   - hostname: layla-oui.ai-cloud.io
     service: http://localhost:8081
+  - hostname: dev.ai-cloud.io
+    service: http://localhost:3002
+  - hostname: "*.ai-cloud.io"
+    service: http://localhost:80
   - service: http_status:404

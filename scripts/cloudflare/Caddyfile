@@ -15,3 +15,7 @@
 :8081 {
     reverse_proxy open-webui:8080
 }
+
+:3002 {
+    reverse_proxy host.docker.internal:3001
+}
