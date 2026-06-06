@@ -31,6 +31,11 @@ export function NavigationPanel({
     await nav.startNavigation(selectedRouteGeometry);
   }
 
+  async function handleStartDemo() {
+    if (!selectedRouteGeometry) return;
+    await nav.startNavigation(selectedRouteGeometry, { simulate: true });
+  }
+
   function handleStop() {
     nav.stopNavigation();
   }
@@ -78,6 +83,14 @@ export function NavigationPanel({
             className="w-full rounded-lg bg-cyan-500 px-3 py-2.5 text-sm font-semibold text-slate-950 transition hover:bg-cyan-400 disabled:cursor-not-allowed disabled:opacity-40"
           >
             {nav.loading ? "Getting turn-by-turn from Valhalla…" : "▶ Start Navigation"}
+          </button>
+          <button
+            type="button"
+            onClick={handleStartDemo}
+            disabled={!canStart}
+            className="mt-2 w-full rounded-lg border border-cyan-500/40 px-3 py-2 text-xs font-semibold text-cyan-300 transition hover:bg-cyan-500/10 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            ▶ Start demo (simulate GPS along route)
           </button>
           {nav.error && (
             <p className="mt-2 rounded bg-red-900/40 p-2 text-xs text-red-300">

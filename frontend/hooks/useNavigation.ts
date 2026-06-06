@@ -7,6 +7,7 @@ import {
   initNavigationState,
   tickNavigation,
 } from "@/lib/navigation/engine";
+import { distanceMeters } from "@/lib/navigation/geo";
 import { extractNavRoute } from "@/lib/navigation/extract";
 import type {
   GpsTick,
@@ -42,7 +43,10 @@ export interface UseNavigationResult {
   arrived: boolean;
   gpsTicks: number;
   lastGps: { lat: number; lng: number; accuracy?: number } | null;
-  startNavigation: (coordinates: [number, number][]) => Promise<void>;
+  startNavigation: (
+    coordinates: [number, number][],
+    opts?: { simulate?: boolean }
+  ) => Promise<void>;
   stopNavigation: () => void;
 }
 
@@ -58,6 +62,8 @@ export function useNavigation(): UseNavigationResult {
   const [lastGps, setLastGps] = useState<UseNavigationResult["lastGps"]>(null);
 
   const navStateRef = useRef<NavigationState | null>(null);
+  const simRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const simulatingRef = useRef(false);
   const { location, error: rawGpsError } = useGeolocation(isNavigating);
   const { speak, unlockAudio, stop: stopSpeak } = useVoiceSpeak();
 
@@ -91,8 +97,61 @@ export function useNavigation(): UseNavigationResult {
     [speak]
   );
 
+  // Demo mode: drive a virtual position along the route geometry so turn-by-turn
+  // voice fires on a stationary laptop (no real GPS movement). 8 m steps stay
+  // under the engine's 18 m alert band so no cue is skipped.
+  const startSim = useCallback(
+    (path: Array<{ lat: number; lng: number }>) => {
+      if (simRef.current) clearInterval(simRef.current);
+      let segIdx = 0;
+      let segProg = 0;
+      const STEP_M = 8;
+      const TICK_MS = 280;
+      processGps({ lat: path[0].lat, lng: path[0].lng, accuracyM: 5, timestamp: Date.now() });
+      simRef.current = setInterval(() => {
+        let remaining = STEP_M;
+        while (remaining > 0 && segIdx < path.length - 1) {
+          const segLen = distanceMeters(path[segIdx], path[segIdx + 1]);
+          if (segLen <= 0) {
+            segIdx += 1;
+            segProg = 0;
+            continue;
+          }
+          if (segProg + remaining < segLen) {
+            segProg += remaining;
+            remaining = 0;
+          } else {
+            remaining -= segLen - segProg;
+            segIdx += 1;
+            segProg = 0;
+          }
+        }
+        if (segIdx >= path.length - 1) {
+          const last = path[path.length - 1];
+          processGps({ lat: last.lat, lng: last.lng, accuracyM: 5, timestamp: Date.now() });
+          if (simRef.current) {
+            clearInterval(simRef.current);
+            simRef.current = null;
+          }
+          return;
+        }
+        const a = path[segIdx];
+        const b = path[segIdx + 1];
+        const segLen = distanceMeters(a, b);
+        const f = segLen > 0 ? segProg / segLen : 0;
+        processGps({
+          lat: a.lat + (b.lat - a.lat) * f,
+          lng: a.lng + (b.lng - a.lng) * f,
+          accuracyM: 5,
+          timestamp: Date.now(),
+        });
+      }, TICK_MS);
+    },
+    [processGps]
+  );
+
   const startNavigation = useCallback(
-    async (coordinates: [number, number][]) => {
+    async (coordinates: [number, number][], opts?: { simulate?: boolean }) => {
       if (!coordinates || coordinates.length < 2) {
         setError("Route has no usable geometry to navigate.");
         return;
@@ -124,24 +183,35 @@ export function useNavigation(): UseNavigationResult {
         setLastGps(null);
         await unlockAudio();
         setIsNavigating(true);
+        if (opts?.simulate) {
+          simulatingRef.current = true;
+          startSim(normalizeToShape(coordinates));
+        } else {
+          simulatingRef.current = false;
+        }
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to start navigation");
       } finally {
         setLoading(false);
       }
     },
-    [unlockAudio]
+    [unlockAudio, startSim]
   );
 
   const stopNavigation = useCallback(() => {
     setIsNavigating(false);
     stopSpeak();
     navStateRef.current = null;
+    simulatingRef.current = false;
+    if (simRef.current) {
+      clearInterval(simRef.current);
+      simRef.current = null;
+    }
   }, [stopSpeak]);
 
   // Real GPS → engine
   useEffect(() => {
-    if (!isNavigating || !location) return;
+    if (!isNavigating || !location || simulatingRef.current) return;
     processGps({
       lat: location.latitude,
       lng: location.longitude,
