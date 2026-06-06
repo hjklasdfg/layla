@@ -53,6 +53,7 @@ export interface UseNavigationResult {
 export function useNavigation(): UseNavigationResult {
   const [route, setRoute] = useState<NavRoute | null>(null);
   const [isNavigating, setIsNavigating] = useState(false);
+  const [simulating, setSimulating] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [currentManeuverIndex, setCurrentManeuverIndex] = useState(0);
@@ -64,7 +65,7 @@ export function useNavigation(): UseNavigationResult {
   const navStateRef = useRef<NavigationState | null>(null);
   const simRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const simulatingRef = useRef(false);
-  const { location, error: rawGpsError } = useGeolocation(isNavigating);
+  const { location, error: rawGpsError } = useGeolocation(isNavigating && !simulating);
   const { speak, unlockAudio, stop: stopSpeak } = useVoiceSpeak();
 
   const processGps = useCallback(
@@ -185,9 +186,11 @@ export function useNavigation(): UseNavigationResult {
         setIsNavigating(true);
         if (opts?.simulate) {
           simulatingRef.current = true;
+          setSimulating(true);
           startSim(normalizeToShape(coordinates));
         } else {
           simulatingRef.current = false;
+          setSimulating(false);
         }
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to start navigation");
@@ -203,6 +206,7 @@ export function useNavigation(): UseNavigationResult {
     stopSpeak();
     navStateRef.current = null;
     simulatingRef.current = false;
+    setSimulating(false);
     if (simRef.current) {
       clearInterval(simRef.current);
       simRef.current = null;
@@ -225,7 +229,7 @@ export function useNavigation(): UseNavigationResult {
     isNavigating,
     loading,
     error,
-    gpsError: isNavigating ? rawGpsError : null,
+    gpsError: isNavigating && !simulating ? rawGpsError : null,
     route,
     currentManeuverIndex,
     distanceToNextM,
