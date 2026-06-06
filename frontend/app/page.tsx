@@ -172,6 +172,7 @@ export default function Home() {
     audioInput?: string;
     journey?: { start?: string; destination?: string };
     profileOverride?: UserPreference["profile"];
+    priorityOverride?: UserPreference["priority"];
   }) {
     if (planningInFlightRef.current) return;
     planningInFlightRef.current = true;
@@ -186,12 +187,15 @@ export default function Home() {
 
     const planPreference: UserPreference = {
       profile: options.profileOverride ?? profile,
-      priority,
+      priority: options.priorityOverride ?? priority,
       ...(customNotes.trim() ? { customNotes: customNotes.trim() } : {}),
     };
 
     if (options.profileOverride && options.profileOverride !== profile) {
       setProfile(options.profileOverride);
+    }
+    if (options.priorityOverride && options.priorityOverride !== priority) {
+      setPriority(options.priorityOverride);
     }
 
     if (options.audioInput) {
@@ -315,6 +319,26 @@ export default function Home() {
     }
   }
 
+  async function fetchNemotronIntent(text: string): Promise<{
+    start?: string;
+    destination?: string;
+    profile?: UserPreference["profile"];
+    priority?: UserPreference["priority"];
+  } | null> {
+    try {
+      const res = await fetch("/api/intent", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text }),
+      });
+      if (!res.ok) return null;
+      const d = await res.json();
+      return d.error ? null : d;
+    } catch {
+      return null;
+    }
+  }
+
   async function handleVoiceInput(text: string) {
     if (isCameraOnCommand(text)) {
       try {
@@ -330,12 +354,19 @@ export default function Home() {
       return;
     }
 
-    const voiceIntent = parseVoiceIntent(text);
-    if (voiceIntent.profile) {
-      setProfile(voiceIntent.profile);
-    }
+    // Nemotron parses the utterance (local on the Spark); regex parse as fallback.
+    const ai = await fetchNemotronIntent(text);
+    const regex = parseVoiceIntent(text);
+    const profilePick = ai?.profile ?? regex.profile;
+    const priorityPick = ai?.priority;
+    const start = ai?.start || regex.journey.start;
+    const destination = ai?.destination || regex.journey.destination;
 
-    if (!shouldTriggerMobilityPlan(text)) {
+    if (profilePick) setProfile(profilePick);
+    if (priorityPick) setPriority(priorityPick);
+
+    const hasJourney = Boolean(start && destination);
+    if (!hasJourney && !shouldTriggerMobilityPlan(text)) {
       if (isLikelyJourneyRequest(text)) {
         voiceRef.current?.notifyHeardButNoJourney();
       }
@@ -344,15 +375,13 @@ export default function Home() {
 
     if (planningInFlightRef.current) return;
 
-    voiceRef.current?.notifySpeechReceived(text, voiceIntent.journey);
+    voiceRef.current?.notifySpeechReceived(text, { start, destination });
 
     void runPlan({
       audioInput: text,
-      profileOverride: voiceIntent.profile,
-      journey: {
-        start: voiceIntent.journey.start,
-        destination: voiceIntent.journey.destination,
-      },
+      profileOverride: profilePick,
+      priorityOverride: priorityPick,
+      journey: { start, destination },
     });
   }
 
