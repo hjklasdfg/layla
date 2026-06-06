@@ -17,4 +17,27 @@ fi
 docker network create vllm-net 2>/dev/null || true
 docker rm -f "$CONTAINER" 2>/dev/null || true
 
-docker run -d --gpus all --ipc=host   -e NVIDIA_DRIVER_CAPABILITIES=compute,utility   -e VLLM_NVFP4_GEMM_BACKEND=marlin   -e VLLM_USE_FLASHINFER_MOE_FP4=0   --name "$CONTAINER"   --network vllm-net   -v /home/nvidia/.cache/huggingface:/root/.cache/huggingface   -v /home/nvidia/.cache/vllm-compile:/root/.cache/vllm   -p "${PORT}:${PORT}"   vllm/vllm-openai:v0.20.0-aarch64-cu130-ubuntu2404     nvidia/Nemotron-3-Nano-Omni-30B-A3B-Reasoning-NVFP4     --tensor-parallel-size 1     --max-model-len 131072     --max-num-seqs 256     --reasoning-parser deepseek_r1     --chat-template-kwargs "$THINKING_KWARGS"     --trust-remote-code     --moe-backend marlin     --gpu-memory-utilization 0.58     --enable-auto-tool-choice     --tool-call-parser hermes     --limit-mm-per-prompt '{"image": 1, "video": 1}'     --port "$PORT"
+docker run -d --gpus all --ipc=host \
+  --restart unless-stopped \
+  -e NVIDIA_DRIVER_CAPABILITIES=compute,utility \
+  -e VLLM_NVFP4_GEMM_BACKEND=marlin \
+  -e VLLM_USE_FLASHINFER_MOE_FP4=0 \
+  --name "$CONTAINER" \
+  --network vllm-net \
+  -v /home/nvidia/.cache/huggingface:/root/.cache/huggingface \
+  -v /home/nvidia/.cache/vllm-compile:/root/.cache/vllm \
+  -p "${PORT}:${PORT}" \
+  vllm/vllm-openai:v0.20.0-aarch64-cu130-ubuntu2404 \
+    nvidia/Nemotron-3-Nano-Omni-30B-A3B-Reasoning-NVFP4 \
+    --tensor-parallel-size 1 \
+    --max-model-len 131072 \
+    --max-num-seqs 256 \
+    --reasoning-parser deepseek_r1 \
+    --chat-template-kwargs "$THINKING_KWARGS" \
+    --trust-remote-code \
+    --moe-backend marlin \
+    --gpu-memory-utilization 0.58 \
+    --enable-auto-tool-choice \
+    --tool-call-parser hermes \
+    --limit-mm-per-prompt '{"image": 1, "video": 1}' \
+    --port "$PORT"
