@@ -73,8 +73,14 @@ export async function POST(request: Request) {
       );
     }
 
-    const tflCandidates = await getJourneys(journey.start, journey.destination);
-    if (!tflCandidates.length) {
+    let tflCandidates: Awaited<ReturnType<typeof getJourneys>> = [];
+    try {
+      tflCandidates = await getJourneys(journey.start, journey.destination);
+    } catch {
+      tflCandidates = []; // backend routes independently of TfL — don't block on TfL
+    }
+    // Only hard-fail when there is no backend that can route without TfL candidates.
+    if (!tflCandidates.length && !process.env.BACKEND_API_URL?.trim()) {
       return NextResponse.json({ error: "No TfL journeys found." }, { status: 404 });
     }
 
