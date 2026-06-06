@@ -9,7 +9,7 @@
 import type { GpsTick, NavRoute, NavigationEvent, NavigationState } from "./types";
 import { distanceMeters } from "./geo";
 
-const PRE_THRESHOLD_M = 150;
+const PRE_THRESHOLD_M = 50;
 const ALERT_THRESHOLD_M = 30;
 const ADVANCE_THRESHOLD_M = 12;
 const ARRIVE_THRESHOLD_M = 15;

@@ -45,7 +45,7 @@ export function NavigationPanel({
       ? "text-slate-400"
       : nav.distanceToNextM < 30
         ? "text-red-400"
-        : nav.distanceToNextM < 150
+        : nav.distanceToNextM < 50
           ? "text-amber-400"
           : "text-slate-300";
 
