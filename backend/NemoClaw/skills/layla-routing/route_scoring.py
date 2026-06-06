@@ -301,7 +301,7 @@ def get_scored_routes(start, end, profile="general", priority="most_accessible",
                 ("quietest", _combo_weights(profile, "least_stressful"))]
     seen, picked = set(), []
     for label, w in variants:
-        path = RE._dijkstra(g["adj"], s, t, w, g["cache"])
+        path = RE.shortest(g, s, t, w)
         if not path:
             continue
         key = tuple(path)
@@ -345,7 +345,7 @@ def get_combo_comparison(start, end, combos):
     seen, out = set(), []
     for c in (combos or [])[:8]:
         prof = c.get("profile", "general"); prio = c.get("priority", "most_accessible")
-        path = RE._dijkstra(g["adj"], s, t, _combo_weights(prof, prio), g["cache"])
+        path = RE.shortest(g, s, t, _combo_weights(prof, prio))
         if not path:
             continue
         key = tuple(path)

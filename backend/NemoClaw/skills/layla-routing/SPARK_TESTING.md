@@ -65,35 +65,41 @@ BBOX="51.45,-0.25,51.55,-0.10" python ingest_osm.py   # one tile (repeat + merge
 All-London crime is already built (`crime_london_points.geojson`, 92k pts). Re-clip
 DEFRA noise to the larger bbox the same way (see `/tmp/convert_noise.py`).
 
-### 2b. cuGraph GPU routing backend (TO BUILD — the only routing change)
-RAPIDS on the Spark (use the CUDA-matching ARM build):
+### 2b. cuGraph GPU routing backend — DONE (`route_engine_gpu.py`)
+Implemented: only the shortest-path step moves to the GPU; the fused edge weights
+(steps / crime / noise / darkness / air) are identical to the CPU path.
+`route_engine.shortest()` dispatches to cuGraph when `LAYLA_GPU=1` and falls back
+to the CPU Dijkstra on any GPU error (so the demo never breaks).
 
+RAPIDS via the NGC container (verified importable on GB10 / CUDA-13 driver):
 ```bash
-pip install --extra-index-url=https://pypi.nvidia.com cudf-cu12 cugraph-cu12
+docker run --gpus all -it --rm --user root -v $PWD/layla:/work -w /work \
+  nvcr.io/nvidia/rapidsai/base:25.06-cuda12.8-py3.12 bash
 ```
 
-Keep **all** our fused edge weights — swap only the shortest-path step:
-1. Build an edge list `(src, dst, weight)` from the same `_edge_record` fusion
-   (steps / crime / noise / darkness) already in `route_engine.py`.
-2. `cudf.DataFrame(edges)` → `cugraph.Graph` → `cugraph.sssp(G, source)` →
-   trace the predecessor column back to the path.
-3. Per profile/preference = a different `weight` column → recompute on GPU (ms).
-
-Ingest, scoring, the 5 signals, and the server contract stay **identical** — only
-`RE._dijkstra` is replaced by a `cugraph.sssp` call. Gate it behind a flag so the
-CPU path stays the fallback:
-
-```python
-USE_GPU = os.environ.get("LAYLA_GPU") == "1"   # route_engine
-```
-
-### 2c. Test GPU vs CPU
+### 2c. Test GPU vs CPU (inside the container)
 ```bash
-# same OD on the all-London graph, time both:
-LAYLA_GPU=0 python -c "import route_scoring as rs, time; t=time.time(); \
-  rs.get_scored_routes('Triton Square','Greenwich','wheelchair'); print('CPU', time.time()-t)"
-LAYLA_GPU=1 python -c "...same..."   # expect ms vs multi-second/timeout
+cd /work/backend/NemoClaw/skills/layla-routing
+pip install requests >/dev/null 2>&1 || true
+rm -f _graph_cache.pkl ../layla-data/_graph_cache.pkl      # rebuild fresh
+
+# correctness + timing — same OD, CPU vs GPU (should return the same route)
+LAYLA_GPU=0 python3 -c "import route_scoring as rs,time; rs._graph(); \
+  t=time.time(); r=rs.get_scored_routes('Triton Square','Aldgate','wheelchair'); \
+  print('CPU %.2fs rec=%s'%(time.time()-t, r['recommended_id']))"
+LAYLA_GPU=1 python3 -c "import route_scoring as rs,time; rs._graph(); \
+  t=time.time(); r=rs.get_scored_routes('Triton Square','Aldgate','wheelchair'); \
+  print('GPU %.2fs rec=%s'%(time.time()-t, r['recommended_id']))"
 ```
+
+⚠️ **Honest caveat — the speedup shows at SCALE, not on the central corridor.**
+Each plan runs 4 variant shortest-paths, and cuGraph rebuilds the graph per call.
+On the ~121k-edge corridor that per-call build overhead can make GPU ≈ or slower
+than the CPU Dijkstra. The GPU win appears once the graph is **all-London**
+(millions of edges, where CPU Dijkstra is tens of seconds). So to demo the win:
+do step 2a (ingest all-London OSM) first, then run the CPU-vs-GPU timing above on
+that graph. Until then, 2c proves **correctness + that the GPU path runs on the
+GB10**, not a speedup.
 
 ---
 

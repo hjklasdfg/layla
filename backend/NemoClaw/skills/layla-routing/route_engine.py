@@ -13,7 +13,7 @@ This is the LOGIC core. Wrap as a NemoClaw skill / tool later — the public
 function `plan_accessible_route(origin, dest, persona)` is the seam.
 """
 from __future__ import annotations
-import json, os, math, heapq
+import json, os, sys, math, heapq
 from collections import defaultdict
 
 # Data lives in the sibling layla-data skill (override with LAYLA_DATA_DIR).
@@ -201,6 +201,20 @@ def _dijkstra(adj, start, goal, w, cache):
         path.append(prev[path[-1]])
     path.reverse()
     return path
+
+
+_GPU = os.environ.get("LAYLA_GPU") == "1"
+
+def shortest(g, s, t, w):
+    """Shortest path under weights w — GPU (cuGraph) when LAYLA_GPU=1, else CPU.
+    Identical fused weights either way; GPU errors fall back to the CPU Dijkstra."""
+    if _GPU:
+        try:
+            import route_engine_gpu as _gpu
+            return _gpu.shortest_path(g, s, t, w)
+        except Exception as e:                       # any GPU issue -> CPU fallback
+            sys.stderr.write(f"[layla] GPU routing fell back to CPU: {e}\n")
+    return _dijkstra(g["adj"], s, t, w, g["cache"])
 
 
 # build the scored graph once, reuse across personas
