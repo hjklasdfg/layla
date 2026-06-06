@@ -59,19 +59,22 @@ def _load_graph():
             adj[a].append((b, L, attrs)); adj[b].append((a, L, attrs))
     return adj, node_coord
 
-def _snap_bridges(adj, node_coord, tol=10.0, cell=0.0004):
-    """Connect endpoints of different ways that are within `tol` metres —
-    bridges tiny gaps so the pedestrian graph is routable."""
+def _snap_bridges(adj, node_coord, tol=8.0, cell=0.0004):
+    """Bridge tiny gaps between way ENDPOINTS (degree<=1 nodes) within `tol`
+    metres so the pedestrian graph stays routable — without exploding the edge
+    count on a dense (road + footway) network."""
+    endpoints = [n for n in node_coord if len(adj[n]) <= 1]
     grid = defaultdict(list)
     for n, c in node_coord.items():
         grid[(int(c[0] / cell), int(c[1] / cell))].append(n)
     added = 0
-    for n, c in list(node_coord.items()):
+    for n in endpoints:
+        c = node_coord[n]
         gx, gy = int(c[0] / cell), int(c[1] / cell)
         for dx in (-1, 0, 1):
             for dy in (-1, 0, 1):
                 for m in grid.get((gx + dx, gy + dy), []):
-                    if m <= n:
+                    if m == n:
                         continue
                     d = _haversine(c, node_coord[m])
                     if 0 < d <= tol:

@@ -17,10 +17,13 @@ Scoring reuses the frontend rules (services/osm/normalize.ts) — steps/tactile/
 crossing penalties — extended with our fused layers (crime, noise, lighting).
 """
 from __future__ import annotations
-import os, sys
+import os, sys, collections, pickle
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import route_engine as RE
 import layla_data_skill as data
+
+DIR = os.path.dirname(os.path.abspath(__file__))
+_CACHE_FILE = os.path.join(DIR, "_graph_cache.pkl")
 
 WALK = RE.WALK_SPEED_MPS
 
@@ -44,24 +47,60 @@ PLACES = {
     "bank": (51.5133, -0.0886), "st paul's": (51.5146, -0.0973),
     "st pauls": (51.5146, -0.0973), "liverpool street": (51.5178, -0.0823),
     "farringdon": (51.5203, -0.1053), "tower hill": (51.5099, -0.0766),
-    "mansion house": (51.5122, -0.0940),
+    "mansion house": (51.5122, -0.0940), "aldgate": (51.5143, -0.0755),
+    "cannon street": (51.5113, -0.0904), "blackfriars": (51.5121, -0.1036),
+    "monument": (51.5108, -0.0860), "fenchurch street": (51.5118, -0.0784),
+    "holborn viaduct": (51.5170, -0.1040), "old street": (51.5256, -0.0877),
 }
 
 _CLAMP = lambda v: int(max(0, min(100, round(v))))
 
+_NCELL = 0.003
+_NOISE_GRID = None
+def _noise_db(lat, lon):
+    """Grid-indexed road-noise dB at a point (fast point-in-polygon)."""
+    global _NOISE_GRID
+    if _NOISE_GRID is None:
+        grid = collections.defaultdict(list)
+        for poly in data._noise():            # {ring, bbox(lon,lat), db, band}
+            b = poly["bbox"]
+            for gx in range(int(b[0] / _NCELL), int(b[2] / _NCELL) + 1):
+                for gy in range(int(b[1] / _NCELL), int(b[3] / _NCELL) + 1):
+                    grid[(gx, gy)].append(poly)
+        _NOISE_GRID = grid
+    for poly in _NOISE_GRID.get((int(lon / _NCELL), int(lat / _NCELL)), []):
+        b = poly["bbox"]
+        if b[0] <= lon <= b[2] and b[1] <= lat <= b[3] and data._point_in_ring(lon, lat, poly["ring"]):
+            return poly["db"]
+    return None
+
 _GRAPH = None
 def _graph():
-    """Build once; enrich each edge with noise (route_engine leaves it 0)."""
+    """Build once (enrich each edge with noise), cached in-memory + on disk.
+    Disk cache auto-invalidates when the footway data is newer. Delete
+    _graph_cache.pkl to force a rebuild."""
     global _GRAPH
-    if _GRAPH is None:
-        g = RE._build()
-        nc = g["node_coord"]
-        for (u, v), rec in g["cache"].items():
-            mlat = (nc[u][1] + nc[v][1]) / 2.0
-            mlon = (nc[u][0] + nc[v][0]) / 2.0
-            nz = data.get_noise(mlat, mlon)["noise_db"]
-            rec["noise"] = 0.0 if nz is None else max(0.0, min(1.0, (nz - 55.0) / 20.0))
-        _GRAPH = g
+    if _GRAPH is not None:
+        return _GRAPH
+    foot = os.path.join(DIR, "layla_osm_footways.geojson")
+    if os.path.exists(_CACHE_FILE) and os.path.getmtime(_CACHE_FILE) >= os.path.getmtime(foot):
+        try:
+            _GRAPH = pickle.load(open(_CACHE_FILE, "rb"))
+            return _GRAPH
+        except Exception:
+            pass
+    g = RE._build()
+    nc = g["node_coord"]
+    for (u, v), rec in g["cache"].items():
+        mlat = (nc[u][1] + nc[v][1]) / 2.0
+        mlon = (nc[u][0] + nc[v][0]) / 2.0
+        nz = _noise_db(mlat, mlon)
+        rec["noise"] = 0.0 if nz is None else max(0.0, min(1.0, (nz - 55.0) / 20.0))
+    _GRAPH = g
+    try:
+        pickle.dump(g, open(_CACHE_FILE, "wb"))
+    except Exception:
+        pass
     return _GRAPH
 
 def _resolve(loc):
