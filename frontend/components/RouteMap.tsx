@@ -9,6 +9,7 @@ import {
   Polyline,
   TileLayer,
   Tooltip,
+  useMap,
 } from "react-leaflet";
 import L from "leaflet";
 import type { FeatureCollection } from "geojson";
@@ -79,6 +80,8 @@ export interface RouteMapProps {
   highContrast?: boolean;
   crimeIncidents?: CrimeIncident[];
   crimeMeta?: CrimeIncidentMeta | null;
+  /** Live position during navigation — renders a moving "you are here" dot. */
+  livePosition?: { lat: number; lng: number } | null;
 }
 
 function LayerToggle({
@@ -221,6 +224,27 @@ function NoiseLayer() {
   );
 }
 
+function LivePosition({ pos }: { pos: { lat: number; lng: number } }) {
+  const map = useMap();
+  useEffect(() => {
+    map.panTo([pos.lat, pos.lng], { animate: true, duration: 0.5 });
+  }, [pos.lat, pos.lng, map]);
+  return (
+    <>
+      <CircleMarker
+        center={[pos.lat, pos.lng]}
+        radius={16}
+        pathOptions={{ color: "#2563eb", weight: 0, fillColor: "#2563eb", fillOpacity: 0.2 }}
+      />
+      <CircleMarker
+        center={[pos.lat, pos.lng]}
+        radius={8}
+        pathOptions={{ color: "#ffffff", weight: 3, fillColor: "#2563eb", fillOpacity: 1 }}
+      />
+    </>
+  );
+}
+
 export function RouteMap({
   routes,
   selectedRouteId,
@@ -230,6 +254,7 @@ export function RouteMap({
   highContrast: highContrastProp = false,
   crimeIncidents = [],
   crimeMeta = null,
+  livePosition = null,
 }: RouteMapProps) {
   const [layers, setLayers] = useState<MapLayerVisibility>(DEFAULT_LAYERS);
   const highContrast = highContrastProp;
@@ -449,6 +474,8 @@ export function RouteMap({
             highContrast={highContrast}
           />
         )}
+
+        {livePosition && <LivePosition pos={livePosition} />}
       </MapContainer>
 
       <div className="flex flex-wrap gap-3 border-t border-slate-700/50 bg-slate-950/80 px-3 py-2">

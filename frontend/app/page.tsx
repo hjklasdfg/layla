@@ -856,6 +856,7 @@ export default function Home() {
                 highContrast={highContrastMap}
                 crimeIncidents={crimeLayerVisible ? crimeIncidents : []}
                 crimeMeta={crimeLayerVisible ? crimeMeta : null}
+                livePosition={nav.isNavigating ? nav.lastGps : null}
               />
             ) : (
               <MapPlaceholder routeCount={routes.length} />
