@@ -23,6 +23,11 @@ def _lazy():
     if _cudf is None:
         import cudf
         import cugraph
+        try:                                          # GB10 / Grace unified memory:
+            import rmm                                # RAPIDS needs managed memory to
+            rmm.reinitialize(managed_memory=True)     # see the full 128 GB (else tiny OOM)
+        except Exception:                             # noqa: BLE001
+            pass
         _cudf, _cugraph = cudf, cugraph
     return _cudf, _cugraph
 

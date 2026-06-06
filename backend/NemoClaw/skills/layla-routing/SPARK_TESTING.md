@@ -92,14 +92,23 @@ LAYLA_GPU=1 python3 -c "import route_scoring as rs,time; rs._graph(); \
   print('GPU %.2fs rec=%s'%(time.time()-t, r['recommended_id']))"
 ```
 
+**Verified on the DGX Spark GB10 (RAPIDS 25.06):** GPU path runs and returns the
+same route (`rec=A`) as CPU. GB10 has **unified LPDDR5X memory**, so cuGraph needs
+RMM **managed memory** or it fails with a tiny-allocation OOM — `route_engine_gpu`
+now enables it automatically (`rmm.reinitialize(managed_memory=True)`).
+
 ⚠️ **Honest caveat — the speedup shows at SCALE, not on the central corridor.**
-Each plan runs 4 variant shortest-paths, and cuGraph rebuilds the graph per call.
-On the ~121k-edge corridor that per-call build overhead can make GPU ≈ or slower
-than the CPU Dijkstra. The GPU win appears once the graph is **all-London**
-(millions of edges, where CPU Dijkstra is tens of seconds). So to demo the win:
-do step 2a (ingest all-London OSM) first, then run the CPU-vs-GPU timing above on
-that graph. Until then, 2c proves **correctness + that the GPU path runs on the
-GB10**, not a speedup.
+Measured on the ~121k-edge corridor: **CPU 6.7s vs GPU 9.8s** (GPU slower). Each
+plan runs 4 variant shortest-paths; cuGraph rebuilds the graph per call and runs a
+full single-source SSSP (no early exit), while the CPU Dijkstra stops at the goal.
+The GPU win appears when:
+- the graph is **all-London** (millions of edges, where CPU Dijkstra is tens of
+  seconds) — do step 2a first, then re-time; or
+- you need **batch / one-to-many** (one origin → reachability to all nodes, or many
+  users at once) — cuGraph's one SSSP call returns all targets.
+
+So today 2c proves **correctness + GPU runs on the GB10**; the speedup is the
+all-London / batch story.
 
 ---
 
