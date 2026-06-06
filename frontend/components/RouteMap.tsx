@@ -38,7 +38,7 @@ const DEFAULT_LAYERS: MapLayerVisibility = {
   noise: false,
   lighting: false,
   riskPoints: true,
-  crimeIncidents: true,
+  crimeIncidents: false,
 };
 
 const CRIME_TYPE_COLORS: Record<string, string> = {
@@ -232,12 +232,28 @@ export function RouteMap({
   const [layers, setLayers] = useState<MapLayerVisibility>(DEFAULT_LAYERS);
   const highContrast = highContrastProp;
 
+  // Crime is a lazy-loaded toggle layer: fetch on first enable.
+  const [crimeData, setCrimeData] = useState<CrimeIncident[]>(crimeIncidents);
+  useEffect(() => {
+    if (!layers.crimeIncidents || crimeData.length) return;
+    let on = true;
+    fetch("/api/crime-incidents")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (on && d?.incidents) setCrimeData(d.incidents as CrimeIncident[]);
+      })
+      .catch(() => {});
+    return () => {
+      on = false;
+    };
+  }, [layers.crimeIncidents, crimeData.length]);
+
   const start = routes[0]?.start;
   const end = routes[0]?.end;
   const crimeLocations = useMemo(() => {
     const grouped = new Map<string, CrimeLocation>();
 
-    crimeIncidents.forEach((incident) => {
+    crimeData.forEach((incident) => {
       const key = `${incident.latitude.toFixed(6)}-${incident.longitude.toFixed(6)}`;
       const existing = grouped.get(key);
 
@@ -260,7 +276,7 @@ export function RouteMap({
     });
 
     return Array.from(grouped.values()).sort((a, b) => b.total - a.total);
-  }, [crimeIncidents]);
+  }, [crimeData]);
   const hasCrimeLayer = crimeLocations.length > 0;
 
   const bounds = useMemo((): L.LatLngBoundsExpression | null => {
@@ -352,14 +368,12 @@ export function RouteMap({
           onChange={(v) => setLayers((p) => ({ ...p, riskPoints: v }))}
           colorClass="bg-red-500"
         />
-        {hasCrimeLayer && (
-          <LayerToggle
-            label="Crime"
-            checked={layers.crimeIncidents}
-            onChange={(v) => setLayers((p) => ({ ...p, crimeIncidents: v }))}
-            colorClass="bg-orange-400"
-          />
-        )}
+        <LayerToggle
+          label="Crime"
+          checked={layers.crimeIncidents}
+          onChange={(v) => setLayers((p) => ({ ...p, crimeIncidents: v }))}
+          colorClass="bg-orange-400"
+        />
       </div>
 
       <MapContainer

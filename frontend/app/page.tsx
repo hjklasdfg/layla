@@ -648,21 +648,6 @@ export default function Home() {
                   >
                     {highContrastMap ? "Standard map" : "High contrast"}
                   </button>
-                  <button
-                    type="button"
-                    onClick={handleCrimeMapToggle}
-                    disabled={crimeLoading}
-                    className="rounded-md border border-orange-400/40 bg-orange-500/10 px-2.5 py-1 text-[10px] font-medium uppercase tracking-wider text-orange-100 transition hover:border-orange-300/70 disabled:cursor-not-allowed disabled:opacity-50"
-                    aria-pressed={crimeLayerVisible}
-                  >
-                    {crimeLoading
-                      ? "Loading crime map…"
-                      : crimeLayerVisible
-                        ? "Hide crime map"
-                        : crimeIncidents.length > 0
-                          ? "Show crime map"
-                          : "Load crime map"}
-                  </button>
                 </div>
               )}
             </div>
