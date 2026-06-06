@@ -37,6 +37,9 @@ yarn-error.log*
 # vercel
 .vercel
 
+# voice memory (per-session user facts)
+data/voice/*.md
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts

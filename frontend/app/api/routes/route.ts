@@ -1,10 +1,19 @@
 import { NextResponse } from "next/server";
 import type { UserPreference } from "@/lib/agent/types";
 import { buildMobilityRoutes } from "@/lib/mobilityEngine";
+import { RouteStore } from "@/lib/voice/route-store";
 import { isTfLConfigured } from "@/services/tfl/client";
 import { TflApiError } from "@/services/tfl/types";
 
 export const maxDuration = 60;
+
+function getSessionId(req: Request): string {
+  const header = req.headers.get("x-session-id");
+  if (header) return header;
+  const cookie = req.headers.get("cookie") ?? "";
+  const match = cookie.match(/(?:^|;\s*)session_id=([^;]+)/);
+  return match ? match[1] : "default";
+}
 
 interface RoutesRequestBody {
   from?: string;
@@ -44,6 +53,27 @@ export async function POST(request: Request) {
         { status: 404 }
       );
     }
+
+    // Populate voice RouteStore so /api/voice/chat can inject current route context
+    const sessionId = getSessionId(request);
+    const bestRoute = routes.reduce(
+      (best, r) => (r.accessibilityScore > best.accessibilityScore ? r : best),
+      routes[0]
+    );
+    RouteStore.set(sessionId, {
+      sessionId,
+      from,
+      to,
+      routes: routes.map((r) => ({
+        id: r.id,
+        durationMinutes: r.etaMin,
+        accessibilityScore: r.accessibilityScore,
+        stepFree: r.stepFree,
+        summary: r.instructions[0] ?? r.modes.join(", "),
+      })),
+      recommendation: bestRoute.id,
+      alerts: routes.flatMap((r) => r.disruptions).filter(Boolean),
+    });
 
     return NextResponse.json({
       routes,
