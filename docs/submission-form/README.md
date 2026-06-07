@@ -36,7 +36,7 @@ LLM (**Nemotron-3-Nano-Omni-30B, NVFP4**) with live **Transport for London** dat
 **City of London** open data (OSM footways, accessibility points, crime, road noise,
 air quality, London Police crime incidences), a **YOLO** live-camera hazard watch, and an agentic **hazard-report
 pipeline** (Nebious TokenFactory VLM → reverse-geocode → council search → email draft) packaged as
-**NVIDIA NemoClaw skills**. Voice in/out is handled by **ElevenLabs VAD / ASR / TTS**.
+**NVIDIA NemoClaw skills**. Voice in/out is handled by ElevenLabs ElevenAgents (**high-quality ASR, eleven_flash_v2 TTS, and turn_v2 turn-taking**).
 
 What's new vs. a normal journey planner:
 - **Re-routes per persona**, not re-ranks — different edge costs → different optimal
@@ -79,7 +79,7 @@ of this document carry the GPU-routing and agent-loop extensions used in the dem
   when the on-device VLM path is unavailable.
 - **Ultralytics YOLO11n** — live per-frame hazard detection in the `camera-hazard`
   service (proximity-scored stop/continue signal, ~300 ms cadence).
-- **ElevenLabs ElevenAgents **VAD / ASR / TTS** — voice in/out, including ConvAI session tokens for low-latency turn-taking.
+- **ElevenLabs ElevenAgents Pipeline** — Conversational AI suite providing native end-to-end processing: Speech-to-Text (ASR) recognition, turn_v2 conversational turn-taking engine for rapid interruption handling, and ultra-low-latency Text-to-Speech (TTS) utilizing the eleven_flash_v2 voice model for spoken navigation adjustments. 
 
 ## Tools Used *
 NVIDIA AI ecosystem tools, libraries, frameworks, SDKs, recipes:
@@ -110,7 +110,7 @@ NVIDIA AI ecosystem tools, libraries, frameworks, SDKs, recipes:
   vLLM ↔ Caddy ↔ Open WebUI).
 - **Open WebUI** — quick model-inspection UI on `vllm-net`.
 
-Non-NVIDIA supporting tools (for completeness): Next.js 16 + Bun, TypeScript,
+Non-NVIDIA supporting tools (for completeness): ElevenLabs ElevenAgents SDK, Next.js 16 + Bun, TypeScript,
 Leaflet, Caddy, Cloudflare Tunnel, Transport for London Unified API, OSM /
 Nominatim, DuckDuckGo, Resend.
 
@@ -182,9 +182,9 @@ needed to be — once over that hump, day-to-day dev was excellent.
 - **Compared to prior cloud-only flows**: no per-token cost meant we could leave
   the agent loop running during hacking — "Ask Layla" went from a measured
   feature to something we just left chatting at the model all day.
-- **One soft spot**: when a model with thinking enabled gets a 5-min ElevenLabs
+- **One soft spot**: when a model with thinking enabled gets a ~10 seconds ElevenLabs
   ConvAI turn budget, you very quickly learn to switch `enable_thinking: false`
-  for the spoken path. That's a UX-design lesson, not a platform fault.
+  for the spoken path. The elevenlabs convAI shows error timeout with reasoning enabled. That's a UX-design lesson, not a platform fault.
 
 ## What additional features or improvements would have made the GB10 platform more effective for your project?
 - **Broader prebuilt aarch64 wheels** (PyTorch CUDA, ultralytics, cuGraph) — or
