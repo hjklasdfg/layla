@@ -29,8 +29,12 @@ async function nemotron(system: string, user: string, maxTokens = 220): Promise<
 
 export async function POST(request: Request) {
   let question = "";
+  let context: { start?: string; destination?: string } | undefined;
   try {
-    ({ question } = (await request.json()) as { question?: string });
+    ({ question, context } = (await request.json()) as {
+      question?: string;
+      context?: { start?: string; destination?: string };
+    });
   } catch {
     return NextResponse.json({ error: "bad JSON" }, { status: 400 });
   }
@@ -43,10 +47,17 @@ export async function POST(request: Request) {
 
   try {
     // 1) Nemotron: what is this about? -> {place, transit}
+    const ctx =
+      context?.destination || context?.start
+        ? `Current planned journey — start="${context?.start ?? ""}", destination="${context?.destination ?? ""}". ` +
+          'If the question says "my destination" / "there" / "where I am going", use that destination as the place; ' +
+          '"my start" / "from here" / "where I am" -> that start. '
+        : "";
     const raw = await nemotron(
       "/no_think Extract from the traveller's question, as ONE JSON object only: " +
-        '{"place": "<a London place name in the question, or empty>", ' +
-        '"transit": true|false (is it about tube/bus/train/line service or delays?)}.',
+        '{"place": "<a London place name (resolve references via the journey context), or empty>", ' +
+        '"transit": true|false (is it about tube/bus/train/line service or delays?)}. ' +
+        ctx,
       question,
       120
     );

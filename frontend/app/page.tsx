@@ -162,6 +162,7 @@ export default function Home() {
   const [askAnswer, setAskAnswer] = useState<string | null>(null);
   const [askLoading, setAskLoading] = useState(false);
   const [askError, setAskError] = useState<string | null>(null);
+  const [lastJourney, setLastJourney] = useState<{ start?: string; destination?: string } | null>(null);
   const voiceRef = useRef<VoicePanelHandle>(null);
   const cameraRef = useRef<CameraPanelHandle>(null);
   const planningInFlightRef = useRef(false);
@@ -184,6 +185,13 @@ export default function Home() {
   }) {
     if (planningInFlightRef.current) return;
     planningInFlightRef.current = true;
+
+    if (options.journey?.start || options.journey?.destination) {
+      setLastJourney({
+        start: options.journey.start,
+        destination: options.journey.destination,
+      });
+    }
 
     setCompared(true);
     setAgentLoading(true);
@@ -359,7 +367,10 @@ export default function Home() {
       const res = await fetch("/api/ask", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ question: text }),
+        body: JSON.stringify({
+          question: text,
+          context: lastJourney ?? { start, destination },
+        }),
       });
       const d = await res.json();
       if (!res.ok || d.error) throw new Error(d.error || `ask failed (${res.status})`);
