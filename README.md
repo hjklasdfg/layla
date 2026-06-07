@@ -206,7 +206,7 @@ flowchart TB
 | `/api/mobility/plan` | POST | Fetch TfL routes → LLM ranking → scored recommendations |
 | `/api/mobility/compare` | POST | Multi-persona route comparison overlay |
 | `/api/camera/report` | POST | Gemini vision analysis of hazard photo → optional email |
-| `/api/camera/stream` | POST | Real-time camera frame hazard scoring |
+| `/api/camera/frame` | POST | Real-time camera frame hazard scoring |
 | `/api/voice/speak` | POST | ElevenLabs TTS — speak plan voiceText |
 | `/api/voice/session` | POST | ElevenLabs ConvAI session token |
 | `/api/voice/scribe-token` | POST | ElevenLabs Scribe STT token |
