@@ -65,6 +65,73 @@ export const serverEnv = {
       return Boolean(this.apiUrl);
     },
   },
+  /** Standalone Layla NemoClaw hazard report (backend/layla-nemoclaw). Tried before Nebius. */
+  laylaNemoclaw: {
+    apiUrl:
+      readEnv("LAYLA_NEMOCLAW_URL") ||
+      readEnv("HAZARD_REPORT_AGENT_URL") ||
+      (readEnv("LAYLA_NEMOCLAW_AUTO_START") !== "false" &&
+      readEnv("HAZARD_REPORT_AGENT_AUTO_START") !== "false"
+        ? "http://127.0.0.1:8002"
+        : ""),
+    autoStart:
+      readEnv("LAYLA_NEMOCLAW_AUTO_START") !== "false" &&
+      readEnv("HAZARD_REPORT_AGENT_AUTO_START") !== "false",
+    demo: ["1", "true", "yes"].includes(
+      (
+        readEnv("LAYLA_NEMOCLAW_DEMO") ||
+        readEnv("HAZARD_REPORT_AGENT_DEMO") ||
+        readEnv("LAYLA_HAZARD_DEMO")
+      ).toLowerCase()
+    ),
+    serverDir:
+      readEnv("LAYLA_NEMOCLAW_SERVER_DIR") || readEnv("HAZARD_REPORT_AGENT_SERVER_DIR"),
+    python:
+      readEnv("LAYLA_NEMOCLAW_PYTHON") ||
+      readEnv("HAZARD_REPORT_AGENT_PYTHON") ||
+      "python3",
+    port:
+      Number(readEnv("LAYLA_NEMOCLAW_PORT") || readEnv("HAZARD_REPORT_AGENT_PORT")) ||
+      8002,
+    startupTimeoutMs:
+      Number(
+        readEnv("LAYLA_NEMOCLAW_STARTUP_TIMEOUT_MS") ||
+          readEnv("HAZARD_REPORT_AGENT_STARTUP_TIMEOUT_MS")
+      ) || 60_000,
+    get enabled() {
+      return Boolean(this.apiUrl);
+    },
+  },
+  /** Standalone live hazard watch (backend/camera-hazard) — separate from hazard report. */
+  cameraHazard: {
+    /** Real camera chunks + fake hazard JSON (no GPU backend) — loop/UI test. */
+    get fakeLoop() {
+      const v = readEnv("CAMERA_HAZARD_FAKE_LOOP").toLowerCase();
+      return v === "1" || v === "true" || v === "yes";
+    },
+    get autoStart() {
+      return readEnv("CAMERA_HAZARD_AUTO_START") !== "false";
+    },
+    get demo() {
+      const v = readEnv("CAMERA_HAZARD_DEMO").toLowerCase();
+      return v === "1" || v === "true" || v === "yes";
+    },
+    demoScenario: readEnv("CAMERA_HAZARD_DEMO_SCENARIO") || "alternate",
+    yoloModel: readEnv("YOLO_MODEL") || "yolo11n.pt",
+    apiUrl:
+      readEnv("CAMERA_HAZARD_API_URL") ||
+      (readEnv("CAMERA_HAZARD_AUTO_START") !== "false" ? "http://127.0.0.1:8001" : ""),
+    apiKey: readEnv("CAMERA_HAZARD_API_KEY"),
+    serverDir: readEnv("CAMERA_HAZARD_SERVER_DIR"),
+    python: readEnv("CAMERA_HAZARD_PYTHON") || "python3",
+    port: Number(readEnv("CAMERA_HAZARD_PORT")) || 8001,
+    startupTimeoutMs: Number(readEnv("CAMERA_HAZARD_STARTUP_TIMEOUT_MS")) || 60_000,
+    /** Landmark id for pretend GPS when reporting without browser location (e.g. st-pancras). */
+    hazardReportFallbackLocation: readEnv("HAZARD_REPORT_FALLBACK_LOCATION"),
+    get enabled() {
+      return this.fakeLoop || Boolean(this.apiUrl);
+    },
+  },
   elevenlabs: {
     apiKey: readEnv("ELEVENLABS_API_KEY"),
     agentId: readEnv("NEXT_PUBLIC_ELEVENLABS_AGENT_ID"),

@@ -1,0 +1,7 @@
+Pillow>=11.1.0
+requests>=2.31.0
+# Optional fallback if HTML scrape fails: pip install duckduckgo-search
+
+# VLM path (install torch for your platform first: https://pytorch.org/get-started)
+transformers>=4.45.0
+qwen-vl-utils>=0.0.8
