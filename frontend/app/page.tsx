@@ -29,6 +29,7 @@ import {
 import { useGeolocation } from "@/hooks/useGeolocation";
 import { useLiveRoutes } from "@/hooks/useLiveRoutes";
 import { useNavigation } from "@/hooks/useNavigation";
+import { useVoiceSpeak } from "@/hooks/useVoiceSpeak";
 import type { MobilityRouteState } from "@/lib/mobilityEngine";
 
 const RouteMap = dynamic(
@@ -156,6 +157,11 @@ export default function Home() {
   const [crimeError, setCrimeError] = useState<string | null>(null);
   const { location: gpsLocation } = useGeolocation(true);
   const nav = useNavigation();
+  const { speak: speakAnswer } = useVoiceSpeak();
+  const [askQuestion, setAskQuestion] = useState("");
+  const [askAnswer, setAskAnswer] = useState<string | null>(null);
+  const [askLoading, setAskLoading] = useState(false);
+  const [askError, setAskError] = useState<string | null>(null);
   const voiceRef = useRef<VoicePanelHandle>(null);
   const cameraRef = useRef<CameraPanelHandle>(null);
   const planningInFlightRef = useRef(false);
@@ -341,6 +347,30 @@ export default function Home() {
     }
   }
 
+  async function askLayla(question: string) {
+    const text = question.trim();
+    if (!text || askLoading) return;
+    setAskQuestion(text);
+    setAskLoading(true);
+    setAskError(null);
+    setAskAnswer(null);
+    try {
+      const res = await fetch("/api/ask", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ question: text }),
+      });
+      const d = await res.json();
+      if (!res.ok || d.error) throw new Error(d.error || `ask failed (${res.status})`);
+      setAskAnswer(d.answer || "(no answer)");
+      void speakAnswer(d.answer || "");
+    } catch (e) {
+      setAskError(e instanceof Error ? e.message : "ask failed");
+    } finally {
+      setAskLoading(false);
+    }
+  }
+
   async function handleVoiceInput(text: string) {
     if (isCameraOnCommand(text)) {
       try {
@@ -386,10 +416,9 @@ export default function Home() {
     if (priorityPick) setPriority(priorityPick);
 
     const hasJourney = Boolean(start && destination);
-    if (!hasJourney && !shouldTriggerMobilityPlan(text)) {
-      if (isLikelyJourneyRequest(text)) {
-        voiceRef.current?.notifyHeardButNoJourney();
-      }
+    if (!hasJourney) {
+      // Not a journey -> answer it as a general question (Ask Layla), spoken aloud.
+      void askLayla(text);
       return;
     }
 
@@ -484,7 +513,14 @@ export default function Home() {
           <section className="space-y-4 lg:col-span-4">
             <VoicePanel ref={voiceRef} onUserSpeech={handleVoiceInput} />
 
-            <AskLaylaPanel />
+            <AskLaylaPanel
+              question={askQuestion}
+              onQuestionChange={setAskQuestion}
+              onAsk={askLayla}
+              answer={askAnswer}
+              loading={askLoading}
+              error={askError}
+            />
 
             <CameraPanel
               ref={cameraRef}
