@@ -1,45 +1,75 @@
 ---
-title: "Layla — Accessible Voice Navigation Assistant"
-date: 2026-06-06
-version: "0.1"
+title: "Layla — Accessibility Mobility Intelligence"
+date: 2026-06-07
+version: "1.0"
 ---
 
-# 🧭 Layla
+# 🧭 Layla — Accessibility Mobility Intelligence
 
-**Voice-first navigation assistant for people with special mobility needs.**
-Built at the NVIDIA Hack for Impact, London, on a DGX Spark running Nemotron-3-Nano-Omni-30B.
+**A voice-first mobility assistant for people the maps forget** — blind and low-vision travellers,
+wheelchair users, older people, and anyone walking home at night.
+Built at **NVIDIA Hack for Impact, London**, on a **DGX Spark / HP Nano AI Station (GB10 Grace
+Blackwell)** running **Nemotron-3-Nano-Omni-30B (NVFP4)**.
 
-Layla listens, sees, and reasons — combining multimodal AI, live Transport for London data, real-time hazard detection via camera, and ElevenLabs voice I/O to guide users along the safest, most accessible route.
+Most maps optimise the *fastest* route for an able-bodied person. For a wheelchair user a flight of
+steps is a dead end; for a blind person a crossing with no tactile paving is a risk; at night a dark,
+high-crime street matters more than three minutes saved. **Layla plans the route that's right for
+*you*, guides you there out loud, sees the street when you can't, and lets anyone improve the city —
+all running on-device, on the edge.**
+
+| Pillar | What it does |
+|---|---|
+| 🗺️ **PLAN** a route for who you are | "From Barbican to Bank — I use a wheelchair" → a step-free, crime-aware route + spoken turn-by-turn (female voice). |
+| 💬 **ASK** Layla anything | A **NemoClaw agent** (Nemotron orchestrates the `layla-data` skill tools) answers open questions — "Is it safe around Bank and is the tube running?" — from real ingested open data. |
+| 📷 **SEE** the street & **IMPROVE** the city | Live **YOLO** hazard detection on the phone camera → a **NemoClaw agent** locates the hazard, finds the responsible council, and drafts the report email. |
+
+**Track:** Public Services. **Bounties:** Nemotron ✓ · ElevenLabs ✓.
 
 ---
 
-## 🗺️ Architecture Overview
+## ✨ What makes it different
+
+- **Re-routes per persona, doesn't re-rank.** Different edge costs → a *different optimal path* for
+  `blind` / `wheelchair` / `elderly` / `night_safety`, not just a re-sorted list.
+- **Three-layer accessibility.** TfL step-free (transit) + OSM street features (kerbs / tactile / steps)
+  + **live lift outages** that correct TfL's static step-free assumption.
+- **Routing fuses open data, not just an API.** We ingest raw London open data on-device — OSM footways
+  with per-edge accessibility, ~92k police crime points, DEFRA road-noise, London-Air quality, live TfL —
+  and fuse it into one **weighted graph** so users can make informed trade-offs.
+- **Agentic, not hardcoded.** "Ask Layla" and the hazard report are **agent loops**: Nemotron decides
+  which **NemoClaw skill** tools to call (chaining several when needed) and answers with real numbers.
+- **On-device on the edge.** Nemotron (NVFP4, ~15 GB, 128K ctx) runs locally via vLLM — no cloud
+  round-trip for the core planner; voice/camera/GPS never have to leave the device.
+
+---
+
+## 🗺️ Architecture
 
 ```mermaid
 flowchart TB
     USER["🧑‍🦽 User<br/>Voice · Camera · Touch"]:::ui
     FE["🌐 Next.js Frontend<br/>layla.ai-cloud.io"]:::app
-    APIS["🔌 Next.js API Routes<br/>/api/mobility · /api/camera · /api/voice"]:::app
-    TFL["🚇 TfL Unified API<br/>Journey Planner"]:::external
-    EL["🎙️ ElevenLabs<br/>Scribe STT · TTS"]:::external
-    NEB["☁️ Nebius AI<br/>Hazard vision + civic email agent"]:::external
-    NEM["🧠 Nemotron-3-Nano-Omni-30B<br/>Mobility Planning · Reasoning"]:::model
-    VLLM["⚙️ vLLM Server<br/>localhost:18000"]:::runtime
-    CADDY["🔀 Caddy Proxy<br/>:80 · :8081 · :3002"]:::runtime
-    CF["☁️ Cloudflare Tunnel<br/>layla-hackathon"]:::external
-    DGX["⚡ DGX Spark<br/>Grace Blackwell · ARM64"]:::hw
+    APIS["🔌 Next.js API Routes<br/>/intent · /ask · /mobility · /camera · /voice"]:::app
+    MB["🧭 Mobility backend :8000<br/>routing engine + Ask-Layla agent"]:::app
+    CAM["📷 camera-hazard :8001<br/>YOLO11n live detection"]:::app
+    NC["✉️ layla-nemoclaw :8002<br/>hazard → email agent (5 skills)"]:::app
+    TFL["🚇 TfL Unified API"]:::external
+    EL["🎙️ ElevenLabs<br/>Scribe STT · TTS (female) · ConvAI"]:::external
+    NEB["☁️ Nebius TokenFactory<br/>cloud Nemotron / VLM fallback"]:::external
+    NEM["🧠 Nemotron-3-Nano-Omni-30B (NVFP4)<br/>intent · routing · agents"]:::model
+    VLLM["⚙️ vLLM :18000"]:::runtime
+    DGX["⚡ DGX Spark / HP Nano AI Station<br/>GB10 Grace Blackwell · ARM64"]:::hw
 
-    USER -->|HTTPS| CF
-    CF --> CADDY
-    CADDY -->|"/*"| FE
-    CADDY -->|"/v1/*"| VLLM
-    FE --> APIS
-    APIS -->|Journey candidates| TFL
+    USER -->|HTTPS| FE --> APIS
+    APIS -->|intent / Q&A| VLLM
+    APIS -->|plan + agent| MB --> VLLM
+    APIS -->|camera frames| CAM
+    APIS -->|hazard report| NC
+    APIS -->|journeys| TFL
     APIS -->|STT / TTS| EL
-    APIS -->|Hazard photo analysis + email agent| NEB
-    APIS -->|Route reasoning| VLLM
-    VLLM --> NEM
-    NEM --> DGX
+    VLLM --> NEM --> DGX
+    MB -.cloud fallback.-> NEB
+    NC -.VLM fallback.-> NEB
 
     classDef hw      fill:#0f172a,color:#93c5fd,stroke:#3b82f6,stroke-width:2px
     classDef runtime fill:#0c4a6e,color:#7dd3fc,stroke:#0ea5e9
@@ -49,321 +79,149 @@ flowchart TB
     classDef external fill:#1c1917,color:#d6d3d1,stroke:#78716c
 ```
 
+All traffic flows through a single **Cloudflare named tunnel** → **Caddy** reverse proxy
+(`/v1/*` → vLLM, `/mobility/*` → backend, `/*` → frontend). The browser only talks to the public URL;
+Next.js API routes proxy to the backends server-side.
+
+---
+
+## 🧩 Services
+
+| Service | Port | Runs in | Purpose |
+|---|---|---|---|
+| Frontend (Next.js 16, Bun) | `3000` | tmux `frontend` | UI + API routes |
+| Mobility backend | `8000` | tmux `mobility-backend` | `layla-routing` engine + **Ask-Layla agent** (`/agent/ask`, `/lookup`, `/mobility/plan`) |
+| camera-hazard | `8001` | tmux `cam-hazard` | **YOLO11n** real-time road-hazard detection |
+| layla-nemoclaw | `8002` | tmux `nemoclaw` | hazard → **email** agent (5 skills) |
+| vLLM (Nemotron) | `18000` | Docker `vllm-active` | OpenAI-compatible inference |
+| Caddy + Cloudflare tunnel | `80` | Docker + tmux `tunnel` | public HTTPS — `https://layla.ai-cloud.io` |
+
+> The mobility backend and both agents are **standalone Python** that call Nemotron directly — they
+> package work as **NemoClaw skills** but do not require the OpenClaw gateway daemon.
+
 ---
 
 ## 🗂️ Repository Structure
 
 ```
 layla/
-├── frontend/                  # Next.js 16 app (TypeScript, Bun)
+├── frontend/                       # Next.js 16 (TypeScript, Bun, Tailwind 4, Leaflet)
 │   ├── app/
-│   │   ├── page.tsx           # Main UI — map, voice, camera, route cards
-│   │   ├── layout.tsx
+│   │   ├── page.tsx                # UI — map, voice, Ask Layla, camera, route cards
 │   │   └── api/
-│   │       ├── mobility/plan/ # Core planning endpoint (TfL + LLM)
-│   │       ├── camera/report/ # Gemini hazard photo analysis + email
-│   │       ├── camera/stream/ # Real-time camera frame processing
-│   │       └── voice/         # ElevenLabs STT token, TTS, session
-│   ├── components/            # UI components
-│   ├── hooks/                 # React hooks (geolocation, routes, voice)
-│   └── lib/                   # Business logic
-│       ├── mobility/          # TfL route fetching, LLM planning, prompt
-│       ├── camera/            # Hazard detection, voice commands
-│       ├── voice/             # TTS scripts, conversation memory
-│       ├── agent/             # LLM provider abstraction (Nemotron/Gemini/backend)
-│       └── config/env.ts      # Server env validation
+│   │       ├── intent/             # voice → Nemotron route/question classifier
+│   │       ├── ask/                # "Ask Layla anything" — NemoClaw agent (+ direct fallback)
+│   │       ├── mobility/{plan,compare}/
+│   │       ├── camera/{frame,hazard/start,report}/   # YOLO frames + hazard report (→ :8001/:8002)
+│   │       └── voice/{speak,scribe-token,...}/        # ElevenLabs STT/TTS
+│   ├── components/                 # VoicePanel · AskLaylaPanel · CameraPanel · RouteMap · …
+│   ├── hooks/                      # useNavigation · useVoiceSpeak · useCameraStream · …
+│   └── lib/                        # mobility / camera / voice / agent / navigation logic
 ├── backend/
-│   └── NemoClaw/              # NVIDIA NemoClaw — AI agent sandbox runner
-├── scripts/
-│   ├── nano-image-chat.py     # Multimodal image chat CLI (Nebius / DGX)
-│   ├── .env.example           # Environment template
-│   ├── assets/                # Test images
-│   ├── cloudflare/            # Caddy + named tunnel setup
-│   └── dgx/                   # vLLM and Open WebUI startup scripts
+│   ├── NemoClaw/skills/
+│   │   ├── layla-data/             # fused open-data skill (8 tools) + ingested datasets
+│   │   └── layla-routing/          # persona-weighted graph search, scoring, server, Ask-Layla agent
+│   ├── camera-hazard/              # YOLO11n hazard service (:8001)
+│   └── layla-nemoclaw/             # hazard → email agent + 5 skills (:8002)
+├── scripts/                        # dgx (vLLM) + cloudflare (Caddy / named tunnel)
+├── docs/submission-form/           # Hack-for-Impact submission write-up
 └── README.md
 ```
 
 ---
 
-## 🌐 Network & Infrastructure
+## 🧠 AI Models
 
-### Public URLs
-
-| URL | Routes to | Purpose |
+| Model | Role | Where |
 |---|---|---|
-| `https://layla.ai-cloud.io/` | Next.js `:3000` | Main app — demo entry point |
-| `https://layla.ai-cloud.io/v1/` | vLLM `:18000` | OpenAI-compatible inference API |
-| `https://layla.ai-cloud.io/oui/` | Open WebUI `:8080` | OUI via subpath (may have asset issues) |
-| `https://layla-oui.ai-cloud.io/` | Open WebUI `:8081` | Open WebUI — stable root path |
-| `https://layla-dev.ai-cloud.io/` | Caddy `:3002` → host `:3001` | Colleague dev frontend |
+| **Nemotron-3-Nano-Omni-30B-A3B-Reasoning-NVFP4** | Primary multimodal reasoning — route ranking/explanation, voice-intent parsing, "Ask Layla" agent, hazard reasoning. 128K ctx, ~15 GB VRAM. | **on-device**, vLLM `:18000` |
+| **Nemotron-3-Nano-Omni** via **Nebius TokenFactory** | Cloud fallback for the same model (same wire format). | cloud |
+| **Qwen2.5-VL** | Hazard image analysis in `layla-nemoclaw` (on-device skill; Nebius `Qwen2.5-VL-72B` fallback). | on-device / cloud |
+| **Ultralytics YOLO11n** | Live per-frame hazard detection (~300 ms cadence, proximity-scored stop/continue). | `camera-hazard` :8001 |
+| **ElevenLabs** | **Scribe** streaming STT, **TTS** (British female "Alice"), ConvAI turn-taking. | cloud |
 
-All traffic flows through a **single named Cloudflare Tunnel** (`layla-hackathon`) → **Caddy reverse proxy** (Docker), which routes by hostname and path prefix.
+Same OpenAI-compatible client targets on-device vLLM, Nebius cloud, or a NemoClaw backend via
+`LLM_PROVIDER = nemotron | nebius | backend`.
 
-### Infrastructure Diagram
+### Agents (NemoClaw skills + Nemotron)
+- **Ask Layla** (`/agent/ask` → `layla_agent.py`): a ReAct loop — Nemotron picks `layla-data` tools
+  (`area_info`, `transit_status`), runs them, and answers with the real numbers. The UI surfaces which
+  tools were called.
+- **Hazard report** (`layla-nemoclaw`, 5 skills): `analyse-image` → `resolve-location` (Nominatim) →
+  `search-authority` (council search) → `prepare-content` → `prepare-email`, streamed to the UI over SSE.
 
-```mermaid
-flowchart LR
-    INET["🌍 Internet"]:::external
-    CF["☁️ Cloudflare Edge<br/>*.ai-cloud.io CNAME → tunnel"]:::external
-    CLD["🔌 cloudflared<br/>layla-hackathon tunnel<br/>(tmux: tunnel)"]:::runtime
-    CADDY["🔀 caddy-proxy<br/>Docker · vllm-net<br/>:80 · :8081 · :3002"]:::runtime
-    VLLM["🧠 vllm-active<br/>Docker · vllm-net<br/>:18000"]:::model
-    OUI["💬 open-webui<br/>Docker · vllm-net<br/>:8080 / :3001"]:::app
-    FE["🌐 bun dev<br/>host :3000<br/>(tmux: frontend)"]:::app
-    DEV["🛠️ dev frontend<br/>host :3001"]:::app
+---
 
-    INET --> CF --> CLD --> CADDY
-    CADDY -->|"layla.ai-cloud.io /*"| FE
-    CADDY -->|"layla.ai-cloud.io /v1/*"| VLLM
-    CADDY -->|"layla-oui.ai-cloud.io :8081"| OUI
-    CADDY -->|"layla-dev.ai-cloud.io :3002"| DEV
+## 🗺️ Personalised Routing
 
-    classDef external fill:#1c1917,color:#d6d3d1,stroke:#78716c
-    classDef runtime  fill:#0c4a6e,color:#7dd3fc,stroke:#0ea5e9
-    classDef model    fill:#713f12,color:#fde68a,stroke:#f59e0b
-    classDef app      fill:#7c2d12,color:#fdba74,stroke:#f97316
+Ingested **London open data**, fused per-edge into one walkable graph:
+
+| Layer | Source | Coverage |
+|---|---|---|
+| Walkable graph + accessibility (steps, kerbs, tactile paving, crossings) | OpenStreetMap | central-London corridor |
+| Crime (~92k points) | Met + City of London Police | Greater London |
+| Noise (road dB bands) | DEFRA | City of London |
+| Air quality | London Air (LAQN) | London (coarse) |
+| Live transit / lift outages / disruptions / crowding | TfL Unified API | London |
+
+**5 scoring signals** — accessibility · safety · quiet · lighting · air — are weighted per persona &
+preference, then a Dijkstra search yields a *different geometry per traveller*. An optional
+**cuGraph + RMM** GPU backend exists for the graph compute (CPU Dijkstra is the default/fallback).
+
+| Profiles | Priorities |
+|---|---|
+| `general` · `blind` · `wheelchair` · `elderly` · `night_safety` | `most_accessible` (Personalised) · `fastest` · `most_reliable` · `least_stressful` |
+
+---
+
+## 📷 Camera Hazard → Civic Email
+
 ```
-
-### Docker Network
-
-All containers share the `vllm-net` bridge network — internal DNS resolution by container name (no IPs needed).
-
-| Container | Image | Network | Ports | Restart |
-|---|---|---|---|---|
-| `vllm-active` | `vllm/vllm-openai:v0.20.0-aarch64-cu130` | `vllm-net` | `18000` | `unless-stopped` |
-| `open-webui` | `ghcr.io/open-webui/open-webui` | `vllm-net` | `3001→8080` | `unless-stopped` |
-| `caddy-proxy` | `caddy:alpine` | `vllm-net` + host bridge | `80`, `8081`, `3002` | `unless-stopped` |
-
----
-
-## 🧠 AI / Inference Stack
-
-```mermaid
-flowchart TB
-    REQ["📥 Mobility Plan Request<br/>GPS · Voice · Camera · Profile"]:::entry
-    TFL["🚇 TfL Journey API<br/>Raw route candidates"]:::external
-    LLM["🧠 LLM Provider<br/>nemotron | nebius | backend"]:::decision
-    DGX["⚙️ Nemotron on DGX<br/>vLLM · NVFP4 · 128K ctx"]:::model
-    NEB["☁️ Nebius Cloud<br/>Nemotron-3-Nano-Omni<br/>API-compatible endpoint"]:::external
-    OUT["🗺️ Route Recommendation<br/>uiText + voiceText + scores"]:::output
-
-    REQ --> TFL --> LLM
-    LLM -->|"LLM_PROVIDER=nemotron"| DGX
-    LLM -->|"type=nebius"| NEB
-    DGX --> OUT
-    NEB --> OUT
-
-    classDef entry    fill:#1e1b4b,color:#c7d2fe,stroke:#4338ca,stroke-width:2px
-    classDef decision fill:#431407,color:#fed7aa,stroke:#ea580c
-    classDef model    fill:#713f12,color:#fde68a,stroke:#f59e0b
-    classDef output   fill:#064e3b,color:#6ee7b7,stroke:#10b981
-    classDef external fill:#1c1917,color:#d6d3d1,stroke:#78716c
+phone camera ──frames──▶ camera-hazard :8001 (YOLO11n)
+        └─ hazard detected ─▶ layla-nemoclaw :8002 agent
+              analyse-image (VLM) → resolve-location (Nominatim)
+              → search-authority (council) → prepare-content → prepare-email → SSE to UI
 ```
-
-### Model
-
-| Property | Value |
-|---|---|
-| Model | `nvidia/Nemotron-3-Nano-Omni-30B-A3B-Reasoning-NVFP4` |
-| Quantisation | NVFP4 (~15 GB VRAM) |
-| Context | 128K tokens |
-| Modalities | Text + Image (multimodal) |
-| Thinking mode | Optional (`enable_thinking: true/false`) |
-| Endpoint | OpenAI-compatible `/v1/chat/completions` |
-
-### LLM Provider Routing (`LLM_PROVIDER`)
-
-| Value | Model | Use case |
-|---|---|---|
-| `nemotron` | Nemotron-3-Nano-Omni-30B on DGX vLLM | Default — on-device, no cloud cost |
-| `nebius` | Nemotron-3-Nano-Omni via Nebius cloud | Cloud fallback (`--type nebius` in scripts) |
-| `backend` | NemoClaw backend API | Custom backend mobility contract |
+One snapshot becomes a council-ready report email. A **demo mode** (`LAYLA_NEMOCLAW_DEMO=1`,
+`CAMERA_HAZARD_DEMO`) skips heavy model loads for a safe live demo.
 
 ---
 
-## 🖥️ Frontend
-
-**Next.js 16**, TypeScript, Bun. App Router with server-side API routes.
-
-### Components
-
-| Component | Purpose |
-|---|---|
-| `VoicePanel` | ElevenLabs Scribe STT mic + TTS playback |
-| `CameraPanel` | `getUserMedia` live camera stream, hazard capture |
-| `RouteMap` | Leaflet map, route polylines, accessibility scores |
-| `MobilityAgentPanel` | Route cards, persona selector, planning trigger |
-| `GeminiInputPanel` | Text/LLM input panel |
-| `RouteCard` | Single route display — steps, scores, voice guide |
-| `ChangeTimeline` | Real-time event / disruption timeline |
-| `EventSimulator` | Inject synthetic city events for demo |
-| `AccessibilityLayer` | Screen-reader and ARIA accessibility wrapper |
-
-### API Routes
-
-| Route | Method | Description |
-|---|---|---|
-| `/api/mobility/plan` | POST | Fetch TfL routes → LLM ranking → scored recommendations |
-| `/api/mobility/compare` | POST | Multi-persona route comparison overlay |
-| `/api/camera/report` | POST | Gemini vision analysis of hazard photo → optional email |
-| `/api/camera/frame` | POST | Real-time camera frame hazard scoring |
-| `/api/voice/speak` | POST | ElevenLabs TTS — speak plan voiceText |
-| `/api/voice/session` | POST | ElevenLabs ConvAI session token |
-| `/api/voice/scribe-token` | POST | ElevenLabs Scribe STT token |
-| `/api/crime-incidents` | GET | City of London crime incident feed |
-
-### User Profiles
-
-| Profile | Description |
-|---|---|
-| `general` | Standard pedestrian |
-| `blind` | Maximises audio cues, avoids complex crossings |
-| `wheelchair` | Step-free only, lift availability |
-| `elderly` | Slower pace, avoids stairs and crowds |
-| `custom` | User-defined priority |
-
-### Priority Options
-
-`fastest` · `least_stressful` · `most_accessible` · `most_reliable`
-
----
-
-## ⚙️ Environment Variables
-
-### `frontend/.env.local`
+## ⚙️ Environment (`frontend/.env.local`)
 
 | Variable | Required | Description |
 |---|---|---|
 | `TFL_APP_KEY` | ✅ | TfL Unified API key |
-| `NEMOTRON_BASE_URL` | ✅ | vLLM base URL (`https://layla.ai-cloud.io`) |
-| `NEMOTRON_MODEL` | — | Model name (default: Nemotron-3-Nano-Omni-30B-NVFP4) |
-| `LLM_PROVIDER` | — | `nemotron` \| `gemini` \| `backend` (default: `nemotron`) |
-| `GEMINI_API_KEY` | — | Google Gemini — optional hazard vision fallback |
-| `ELEVENLABS_API_KEY` | ✅ | ElevenLabs — Scribe STT + TTS |
-| `ELEVENLABS_VOICE_ID` | — | TTS voice ID |
-| `BACKEND_API_URL` | — | NemoClaw backend (if `LLM_PROVIDER=backend`) |
-| `RESEND_API_KEY` | — | Email hazard reports via Resend |
-
-### `scripts/.env`
-
-| Variable | Set by | Description |
-|---|---|---|
-| `NEBIUS_API_KEY` | manual | Nebius cloud inference key |
-| `CLOUDFLARE_API_TOKEN` | manual | Tunnel + DNS edit permissions |
-| `TUNNEL_NAME` | `setup-named-tunnel.sh` | `layla-hackathon` |
-| `TUNNEL_HOSTNAME` | `setup-named-tunnel.sh` | `layla.ai-cloud.io` |
-| `GATEWAY_URL` | `setup-named-tunnel.sh` | `https://layla.ai-cloud.io` |
+| `ELEVENLABS_API_KEY` | ✅ | Scribe STT + TTS |
+| `NEMOTRON_BASE_URL` | ✅ | vLLM base URL — `http://localhost:18000` on the Spark; public URL elsewhere |
+| `BACKEND_API_URL` | ✅ | Mobility backend — `http://localhost:8000` on the Spark |
+| `NEMOTRON_MODEL` | — | default `nvidia/Nemotron-3-Nano-Omni-30B-A3B-Reasoning-NVFP4` |
+| `ELEVENLABS_VOICE_ID` | — | TTS voice (default **Alice**, British female) |
+| `LAYLA_NEMOCLAW_URL` / `LAYLA_NEMOCLAW_DEMO` | — | hazard agent URL (`:8002`) / demo mode |
+| `CAMERA_HAZARD_API_URL` | — | YOLO service (`:8001`) |
+| `LLM_PROVIDER` | — | `nemotron` (default) \| `nebius` \| `backend` |
+| `NEBIUS_API_KEY` · `RESEND_API_KEY` | — | cloud fallback inference · send the hazard email |
 
 ---
 
-## 🚀 Daily Startup
+## 🚀 Daily Startup (DGX Spark)
 
 ```bash
-cd /home/nvidia/_github/charles-cai/layla/scripts
+cd /home/nvidia/_github/charles-cai/layla
 
-# 1. vLLM (GPU — start first, takes ~60s to load)
-./dgx/nemotron-nano-omni-30b-nvfp4.sh
-
-# 2. Open WebUI
-./dgx/open-webui.sh
-
-# 3. Caddy reverse proxy
-./cloudflare/caddy.sh
-
-# 4. Frontend (tmux — survives SSH disconnects)
-tmux new-session -s frontend -d 'cd frontend && bun dev'
-
-# 5. Cloudflare tunnel (tmux)
-tmux new-session -s tunnel -d './cloudflare/run-named-tunnel.sh'
-```
-
-Check sessions:
-```bash
-tmux ls
-# frontend: 1 windows
-# tunnel:   1 windows
-
-tmux attach -t frontend   # Ctrl+B, D to detach
-tmux attach -t tunnel     # Ctrl+B, D to detach
+scripts/dgx/nemotron-nano-omni-30b-nvfp4.sh                                   # 1. vLLM (GPU, ~60s)
+tmux new-session -s tunnel  -d 'cd scripts && ./cloudflare/run-named-tunnel.sh'  # 2. public HTTPS
+tmux new-session -s mobility-backend -d 'bash backend/NemoClaw/skills/layla-routing/run.sh'  # 3. routing + agent
+tmux new-session -s cam-hazard -d 'cd backend/camera-hazard && YOLO_DEVICE=cpu PORT=8001 .venv/bin/python server.py'  # 4. YOLO
+tmux new-session -s nemoclaw   -d 'cd backend/layla-nemoclaw && LAYLA_NEMOCLAW_DEMO=1 PORT=8002 .venv/bin/python server.py'  # 5. email agent
+tmux new-session -s frontend   -d 'cd frontend && bun dev'                    # 6. frontend
 ```
 
 Verify:
 ```bash
-curl https://layla.ai-cloud.io/v1/models        # vLLM
-curl https://layla.ai-cloud.io/                 # Frontend
-docker ps --filter name=caddy-proxy --format "{{.Status}}"
-```
-
----
-
-## 🔧 Scripts
-
-### `scripts/nano-image-chat.py`
-
-Multimodal image-to-text CLI. Sends an image to Nemotron and prints the response.
-
-```bash
-# Nebius cloud (default)
-python3 nano-image-chat.py assets/police-road-block-AG3Y12.jpg
-
-# Local DGX vLLM
-python3 nano-image-chat.py assets/police-road-block-AG3Y12.jpg --type dgx
-
-# Custom prompt
-python3 nano-image-chat.py assets/police-road-block-AG3Y12.jpg "Any hazards visible?" --type dgx
-```
-
-### `scripts/dgx/`
-
-| Script | Description |
-|---|---|
-| `nemotron-nano-omni-30b-nvfp4.sh` | Start `vllm-active` container; optional `thinking=1` arg |
-| `open-webui.sh` | Start `open-webui` container on `vllm-net` |
-
-### `scripts/cloudflare/`
-
-| Script | Run | Description |
-|---|---|---|
-| `setup-named-tunnel.sh` | One-time | Create tunnel, write `cloudflared.yml`, route DNS |
-| `run-named-tunnel.sh` | Daily (tmux) | Run the named tunnel — stable URL, no rotation |
-| `caddy.sh` | Daily | Start `caddy-proxy` Docker container |
-| `cloudflared-tunnel.sh` | Ad-hoc | Quick single-port tunnel (no Caddy, no auth) |
-
----
-
-## 🐳 One-Time Setup
-
-### 1. Install cloudflared (ARM64 / DGX Spark)
-
-```bash
-sudo mkdir -p --mode=0755 /usr/share/keyrings
-curl -fsSL https://pkg.cloudflare.com/cloudflare-main.gpg | sudo tee /usr/share/keyrings/cloudflare-main.gpg >/dev/null
-echo "deb [signed-by=/usr/share/keyrings/cloudflare-main.gpg] https://pkg.cloudflare.com/cloudflared any main" | sudo tee /etc/apt/sources.list.d/cloudflared.list
-sudo apt-get update && sudo apt-get install cloudflared
-```
-
-### 2. Authenticate cloudflared
-
-```bash
-cloudflared tunnel login   # opens browser — select ai-cloud.io zone
-```
-
-### 3. Create named tunnel
-
-```bash
-cd scripts
-cp .env.example .env
-# edit .env: set CLOUDFLARE_API_TOKEN, NEBIUS_API_KEY
-./cloudflare/setup-named-tunnel.sh
-```
-
-### 4. Frontend env
-
-```bash
-cd frontend
-cp .env.local.example .env.local
-# edit .env.local: set TFL_APP_KEY, GEMINI_API_KEY, ELEVENLABS_API_KEY
-# set NEMOTRON_BASE_URL=https://layla.ai-cloud.io
+curl https://layla.ai-cloud.io/v1/models                                          # vLLM
+curl -X POST https://layla.ai-cloud.io/api/ask -H 'Content-Type: application/json' \
+  -d '{"question":"Is it safe around Bank and is the tube running?"}'             # Ask-Layla agent
 ```
 
 ---
@@ -372,26 +230,26 @@ cp .env.local.example .env.local
 
 | Component | Spec |
 |---|---|
-| Machine | NVIDIA DGX Spark |
-| GPU | Grace Blackwell (GB10) |
-| Architecture | ARM64 (aarch64) |
-| OS | Ubuntu Linux |
-| Kernel | 6.17.0-1021-nvidia |
-| Driver | NVIDIA 570+ |
-| Docker runtime | `nvidia-container-runtime` |
+| Machine | NVIDIA DGX Spark / HP Nano AI Station |
+| GPU | GB10 Grace Blackwell · 128 GB unified LPDDR5X |
+| Arch | ARM64 (aarch64), CUDA 13 |
+| Serving | `vllm/vllm-openai:v0.20.0-aarch64-cu130`, NVFP4, 128K context |
 
 ---
 
-## 📦 Backend — NemoClaw
+## 👥 Team — Hack for Impact, London
 
-`backend/NemoClaw/` is an NVIDIA open-source reference stack for running always-on AI agents (OpenClaw, Hermes) inside OpenShell sandboxes with network policy enforcement and credential sanitization. It is used by Layla as the optional `LLM_PROVIDER=backend` inference pathway.
-
-See [`backend/NemoClaw/CLAUDE.md`](backend/NemoClaw/CLAUDE.md) for full architecture and contribution guide.
-
----
+| Member | Focus |
+|---|---|
+| Yilin Li | Data pipeline + routing engine + Ask-Layla agent |
+| Yao Gong | Frontend + vision model + hazard pipeline |
+| Ningqian Yang | Voice navigation |
+| Mark Xiaoyi Sun | Agent + on-device inference |
+| Charles Cai | Architecture + open data |
 
 ## Changelog
 
-| Date | Author | Description | Version |
-|---|---|---|---|
-| 2026-06-06 | Yilin Lee | Initial comprehensive architecture + infrastructure README | 0.1 |
+| Date | Description | Version |
+|---|---|---|
+| 2026-06-06 | Initial architecture + infrastructure README | 0.1 |
+| 2026-06-07 | Final product: Ask-Layla NemoClaw agent, fused-open-data persona routing, real YOLO11n hazard → civic-email agent, female voice, edge-local Nemotron | 1.0 |
