@@ -72,6 +72,7 @@ PLACES = {
     "bank": (51.5133, -0.0886), "st paul's": (51.5146, -0.0973),
     "st pauls": (51.5146, -0.0973), "liverpool street": (51.5178, -0.0823),
     "farringdon": (51.5203, -0.1053), "tower hill": (51.5099, -0.0766),
+    "town hill": (51.5099, -0.0766),  # common ASR mishearing of "Tower Hill"
     "mansion house": (51.5122, -0.0940), "aldgate": (51.5143, -0.0755),
     "cannon street": (51.5113, -0.0904), "blackfriars": (51.5121, -0.1036),
     "monument": (51.5108, -0.0860), "fenchurch street": (51.5118, -0.0784),
