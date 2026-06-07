@@ -164,6 +164,15 @@ def lookup(body):
     return out, None
 
 
+def agent_ask(body):
+    """Ask-Layla via the NemoClaw agent loop — Nemotron orchestrates layla-data tools."""
+    q = ((body or {}).get("question") or "").strip()
+    if not q:
+        return None, "question is required"
+    import layla_agent
+    return layla_agent.run_agent(q, (body or {}).get("context")), None
+
+
 class Handler(BaseHTTPRequestHandler):
     def _send(self, code, obj):
         body = json.dumps(obj).encode()
@@ -186,15 +195,18 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         is_compare = self.path.startswith("/mobility/compare")
         is_lookup = self.path.startswith("/lookup")
-        if not (is_compare or is_lookup or self.path.startswith("/mobility/plan")):
-            return self._send(404, {"error": "POST /mobility/plan | /mobility/compare | /lookup"})
+        is_agent = self.path.startswith("/agent/ask")
+        if not (is_compare or is_lookup or is_agent or self.path.startswith("/mobility/plan")):
+            return self._send(404, {"error": "POST /mobility/plan | /mobility/compare | /lookup | /agent/ask"})
         try:
             n = int(self.headers.get("Content-Length", 0))
             req = json.loads(self.rfile.read(n) or b"{}")
         except (ValueError, json.JSONDecodeError) as e:
             return self._send(400, {"error": f"bad JSON: {e}"})
         try:
-            if is_lookup:
+            if is_agent:
+                resp, err = agent_ask(req)
+            elif is_lookup:
                 resp, err = lookup(req)
             elif is_compare:
                 resp, err = compare(req.get("journey"), req.get("combos"))

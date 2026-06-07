@@ -45,6 +45,25 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "BACKEND_API_URL not configured" }, { status: 503 });
   }
 
+  // Primary path: the NemoClaw agent — Nemotron orchestrates the layla-data skill tools.
+  try {
+    const ag = await fetch(`${BACKEND.replace(/\/$/, "")}/agent/ask`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ question, context }),
+      signal: AbortSignal.timeout(60000),
+    });
+    if (ag.ok) {
+      const d = (await ag.json()) as { answer?: string; trace?: unknown[]; error?: string };
+      if (d.answer && !d.error) {
+        return NextResponse.json({ answer: d.answer, via: "nemoclaw-agent", trace: d.trace ?? [] });
+      }
+    }
+  } catch {
+    /* agent slow/unavailable -> fall back to the direct pipeline below */
+  }
+
+  // Fallback path: direct Nemotron (classify -> /lookup -> answer).
   try {
     // 1) Nemotron: what is this about? -> {place, transit}
     const ctx =
@@ -95,7 +114,7 @@ export async function POST(request: Request) {
       240
     );
 
-    return NextResponse.json({ answer, place, transit, data });
+    return NextResponse.json({ answer, via: "direct", place, transit, data });
   } catch (err) {
     const message = err instanceof Error ? err.message : "ask failed";
     return NextResponse.json({ error: message }, { status: 502 });

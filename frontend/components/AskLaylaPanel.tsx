@@ -17,6 +17,7 @@ export function AskLaylaPanel({
   loading,
   error,
   listening,
+  meta,
 }: {
   question: string;
   onQuestionChange: (v: string) => void;
@@ -25,6 +26,7 @@ export function AskLaylaPanel({
   loading: boolean;
   error: string | null;
   listening?: boolean;
+  meta?: { via?: string; tools?: string[] } | null;
 }) {
   return (
     <div className="space-y-3 rounded-xl border border-cyan-500/30 bg-slate-900/40 p-4">
@@ -82,8 +84,16 @@ export function AskLaylaPanel({
 
       {error && <p className="text-[11px] text-red-300">{error}</p>}
       {answer && (
-        <div className="rounded-lg border border-cyan-500/20 bg-cyan-950/10 px-3 py-2.5 text-sm leading-relaxed text-slate-200">
-          {answer}
+        <div className="space-y-1.5">
+          <div className="rounded-lg border border-cyan-500/20 bg-cyan-950/10 px-3 py-2.5 text-sm leading-relaxed text-slate-200">
+            {answer}
+          </div>
+          {meta?.via === "nemoclaw-agent" && (
+            <p className="text-[10px] text-cyan-400/70">
+              ⚡ Answered by the NemoClaw agent
+              {meta.tools && meta.tools.length ? ` · called ${meta.tools.join(", ")}` : ""}
+            </p>
+          )}
         </div>
       )}
     </div>

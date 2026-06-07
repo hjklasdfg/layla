@@ -163,6 +163,7 @@ export default function Home() {
   const [askLoading, setAskLoading] = useState(false);
   const [askError, setAskError] = useState<string | null>(null);
   const [lastJourney, setLastJourney] = useState<{ start?: string; destination?: string } | null>(null);
+  const [askMeta, setAskMeta] = useState<{ via?: string; tools?: string[] } | null>(null);
   const voiceRef = useRef<VoicePanelHandle>(null);
   const cameraRef = useRef<CameraPanelHandle>(null);
   const planningInFlightRef = useRef(false);
@@ -363,6 +364,7 @@ export default function Home() {
     setAskLoading(true);
     setAskError(null);
     setAskAnswer(null);
+    setAskMeta(null);
     try {
       const res = await fetch("/api/ask", {
         method: "POST",
@@ -375,6 +377,10 @@ export default function Home() {
       const d = await res.json();
       if (!res.ok || d.error) throw new Error(d.error || `ask failed (${res.status})`);
       setAskAnswer(d.answer || "(no answer)");
+      const tools = Array.isArray(d.trace)
+        ? ((d.trace as Array<{ tool?: string }>).map((t) => t?.tool).filter(Boolean) as string[])
+        : [];
+      setAskMeta({ via: d.via, tools });
       void speakAnswer(d.answer || "");
     } catch (e) {
       setAskError(e instanceof Error ? e.message : "ask failed");
@@ -537,6 +543,7 @@ export default function Home() {
               answer={askAnswer}
               loading={askLoading}
               error={askError}
+              meta={askMeta}
             />
 
             <CameraPanel
