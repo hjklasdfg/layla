@@ -144,6 +144,26 @@ def compare(journey, combos):
     }, None
 
 
+def lookup(body):
+    """Ask-Layla data lookup: what's around a place + (optionally) live line status.
+    The frontend's /api/ask supplies {place, transit}; Nemotron turns this into prose."""
+    place = (body or {}).get("place") or ""
+    out = {"place": place}
+    if (body or {}).get("transit"):
+        try:
+            out["transit"] = rs.data.get_line_status()
+        except Exception as e:                       # noqa: BLE001
+            out["transit"] = {"error": str(e)[:80]}
+    if place:
+        try:
+            lat, lon = rs._resolve(place)
+            out["lat"], out["lon"] = lat, lon
+            out["context"] = rs.data.get_context(lat, lon, 250)
+        except Exception:                            # noqa: BLE001
+            out["place_error"] = f"couldn't locate '{place}'"
+    return out, None
+
+
 class Handler(BaseHTTPRequestHandler):
     def _send(self, code, obj):
         body = json.dumps(obj).encode()
@@ -165,15 +185,18 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         is_compare = self.path.startswith("/mobility/compare")
-        if not (is_compare or self.path.startswith("/mobility/plan")):
-            return self._send(404, {"error": "POST /mobility/plan or /mobility/compare"})
+        is_lookup = self.path.startswith("/lookup")
+        if not (is_compare or is_lookup or self.path.startswith("/mobility/plan")):
+            return self._send(404, {"error": "POST /mobility/plan | /mobility/compare | /lookup"})
         try:
             n = int(self.headers.get("Content-Length", 0))
             req = json.loads(self.rfile.read(n) or b"{}")
         except (ValueError, json.JSONDecodeError) as e:
             return self._send(400, {"error": f"bad JSON: {e}"})
         try:
-            if is_compare:
+            if is_lookup:
+                resp, err = lookup(req)
+            elif is_compare:
                 resp, err = compare(req.get("journey"), req.get("combos"))
             else:
                 resp, err = plan(req.get("journey"), req.get("preference"))

@@ -8,6 +8,7 @@ import { ChangeTimeline } from "@/components/ChangeTimeline";
 import { GeminiInputPanel, type ClientPlanPreview } from "@/components/GeminiInputPanel";
 import type { LlmPlanInput } from "@/lib/mobility/llm-plan-prompt";
 import { MobilityAgentPanel } from "@/components/MobilityAgentPanel";
+import { AskLaylaPanel } from "@/components/AskLaylaPanel";
 import { NavigationPanel } from "@/components/NavigationPanel";
 import { VoicePanel, type VoicePanelHandle } from "@/components/VoicePanel";
 import { RouteCard } from "@/components/RouteCard";
@@ -482,6 +483,8 @@ export default function Home() {
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
           <section className="space-y-4 lg:col-span-4">
             <VoicePanel ref={voiceRef} onUserSpeech={handleVoiceInput} />
+
+            <AskLaylaPanel />
 
             <CameraPanel
               ref={cameraRef}
