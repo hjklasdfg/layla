@@ -4,17 +4,33 @@ import { useCallback, useEffect, useState } from "react";
 import type {
   HazardReportResult,
   HazardReportStep,
+  HazardSkillId,
+  HazardSkillOutputs,
   HazardStreamEvent,
 } from "@/lib/camera/types";
 
 const STEP_ORDER: HazardReportStep["id"][] = [
-  "analyze_photo",
-  "locate_gps",
-  "search_web",
-  "find_authority",
-  "draft_email",
+  "analyse_image",
+  "resolve_location",
+  "search_authority",
+  "prepare_content",
+  "prepare_email",
   "ready",
 ];
+
+const SKILL_LABELS: Record<HazardSkillId, string> = {
+  analyse_image: "1 · Analyse image (VLM)",
+  resolve_location: "2 · Resolve location (geoweb)",
+  search_authority: "3 · Search authority",
+  prepare_content: "4 · Prepare content",
+  prepare_email: "5 · Prepare email",
+};
+
+const IMAGE_INTRO_MS = 1000;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 function stepIcon(status: HazardReportStep["status"]) {
   if (status === "running") return "◉";
@@ -30,10 +46,106 @@ function stepColor(status: HazardReportStep["status"]) {
   return "text-slate-500";
 }
 
+function SkillOutputCard({
+  skillId,
+  output,
+}: {
+  skillId: HazardSkillId;
+  output: NonNullable<HazardSkillOutputs[HazardSkillId]>;
+}) {
+  const rows: Array<{ k: string; v: string }> = [];
+
+  if (skillId === "analyse_image" && "hazard_type" in output) {
+    const o = output;
+    rows.push(
+      { k: "Type", v: o.hazard_type ?? "—" },
+      { k: "Severity", v: o.severity ?? "—" },
+      { k: "Confidence", v: o.confidence != null ? String(o.confidence) : "—" },
+      { k: "Description", v: o.description ?? "—" },
+      { k: "Accessibility", v: o.accessibility_impact ?? "—" }
+    );
+  } else if (skillId === "resolve_location" && "display_name" in output) {
+    const o = output;
+    rows.push(
+      { k: "Address", v: o.display_name ?? "—" },
+      { k: "Road", v: o.road ?? "—" },
+      { k: "Borough", v: o.borough ?? "—" },
+      { k: "Postcode", v: o.postcode ?? "—" },
+      {
+        k: "GPS",
+        v: o.lat != null && o.lng != null ? `${o.lat}, ${o.lng}` : "—",
+      }
+    );
+  } else if (skillId === "search_authority" && "authority_name" in output) {
+    const o = output;
+    rows.push(
+      { k: "Organization", v: o.authority_name ?? "—" },
+      { k: "Department", v: o.department ?? "—" },
+      { k: "Email", v: o.email ?? "—" },
+      { k: "Source", v: o.source ?? "—" },
+      { k: "Query", v: o.query ?? "—" }
+    );
+  } else if (skillId === "prepare_content" && "headline" in output) {
+    const o = output;
+    rows.push(
+      { k: "Headline", v: o.headline ?? "—" },
+      { k: "Location", v: o.location_summary ?? "—" },
+      { k: "Impact", v: o.accessibility_impact ?? "—" },
+      { k: "Action", v: o.suggested_action ?? "—" }
+    );
+    if (o.facts?.length) {
+      rows.push({ k: "Facts", v: o.facts.join(" · ") });
+    }
+  } else if (skillId === "prepare_email" && "subject" in output) {
+    const o = output;
+    rows.push(
+      { k: "To", v: o.to ?? "—" },
+      { k: "Subject", v: o.subject ?? "—" },
+      { k: "Organization", v: o.organization ?? "—" }
+    );
+  }
+
+  if (!rows.length) return null;
+
+  return (
+    <div className="rounded-lg border border-slate-700/60 bg-slate-900/50 p-3">
+      <p className="text-[10px] font-semibold uppercase tracking-wide text-violet-300/90">
+        {SKILL_LABELS[skillId]}
+      </p>
+      <dl className="mt-2 space-y-1">
+        {rows.map(({ k, v }) => (
+          <div key={k} className="grid grid-cols-[5.5rem_1fr] gap-2 text-[11px]">
+            <dt className="text-slate-500">{k}</dt>
+            <dd className="text-slate-300">{v}</dd>
+          </div>
+        ))}
+      </dl>
+      {skillId === "search_authority" &&
+        "search_results" in output &&
+        output.search_results &&
+        output.search_results.length > 0 && (
+          <ul className="mt-2 space-y-0.5 border-t border-slate-800 pt-2 text-[10px]">
+            {output.search_results.slice(0, 3).map((r) => (
+              <li key={r.url ?? r.title}>
+                <a
+                  href={r.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-cyan-500/80 underline"
+                >
+                  {r.title}
+                </a>
+              </li>
+            ))}
+          </ul>
+        )}
+    </div>
+  );
+}
+
 interface HazardReportModalProps {
   open: boolean;
   onClose: () => void;
-  /** Called when user clicks Report hazard — returns captured image payload */
   onStart: () => Promise<{
     imageBase64: string;
     mimeType: string;
@@ -44,6 +156,7 @@ interface HazardReportModalProps {
 
 export function HazardReportModal({ open, onClose, onStart }: HazardReportModalProps) {
   const [steps, setSteps] = useState<HazardReportStep[]>([]);
+  const [skillOutputs, setSkillOutputs] = useState<HazardSkillOutputs>({});
   const [result, setResult] = useState<HazardReportResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
@@ -52,14 +165,19 @@ export function HazardReportModal({ open, onClose, onStart }: HazardReportModalP
   const [emailSent, setEmailSent] = useState(false);
 
   const [editableEmail, setEditableEmail] = useState({ to: "", subject: "", body: "" });
+  const [imagePreviewUrl, setImagePreviewUrl] = useState<string | null>(null);
+  const [introComplete, setIntroComplete] = useState(false);
 
   const reset = useCallback(() => {
     setSteps([]);
+    setSkillOutputs({});
     setResult(null);
     setError(null);
     setSendStatus(null);
     setEmailSent(false);
     setEditableEmail({ to: "", subject: "", body: "" });
+    setImagePreviewUrl(null);
+    setIntroComplete(false);
   }, []);
 
   useEffect(() => {
@@ -71,12 +189,25 @@ export function HazardReportModal({ open, onClose, onStart }: HazardReportModalP
     let cancelled = false;
 
     const start = async () => {
-      reset();
+      setSteps([]);
+      setSkillOutputs({});
+      setResult(null);
+      setError(null);
+      setSendStatus(null);
+      setEmailSent(false);
+      setEditableEmail({ to: "", subject: "", body: "" });
+      setIntroComplete(false);
       setRunning(true);
 
       try {
         const payload = await onStart();
         if (cancelled) return;
+
+        setImagePreviewUrl(`data:${payload.mimeType};base64,${payload.imageBase64}`);
+
+        await sleep(IMAGE_INTRO_MS);
+        if (cancelled) return;
+        setIntroComplete(true);
 
         const res = await fetch("/api/camera/report/stream", {
           method: "POST",
@@ -118,8 +249,14 @@ export function HazardReportModal({ open, onClose, onStart }: HazardReportModalP
                 next[idx] = event.step!;
                 return next;
               });
+            } else if (event.type === "skill" && event.skill && event.output) {
+              setSkillOutputs((prev) => ({
+                ...prev,
+                [event.skill!]: event.output,
+              }));
             } else if (event.type === "complete" && event.result) {
               setResult(event.result);
+              if (event.result.skills) setSkillOutputs(event.result.skills);
               setEditableEmail({
                 to: event.result.email.to,
                 subject: event.result.email.subject,
@@ -200,20 +337,16 @@ export function HazardReportModal({ open, onClose, onStart }: HazardReportModalP
           (id): HazardReportStep => ({
             id,
             label:
-              id === "analyze_photo"
-                ? "Identifying hazard type (Nebius AI vision)"
-                : id === "locate_gps"
-                  ? "Resolving location from GPS"
-                  : id === "search_web"
-                    ? "Searching online for reporting authority"
-                    : id === "find_authority"
-                      ? "Finding organization email (Nebius AI)"
-                      : id === "draft_email"
-                        ? "Drafting report email (Nebius AI)"
-                        : "Ready — click Send",
+              id === "ready"
+                ? "Ready — click Send"
+                : SKILL_LABELS[id as HazardSkillId] ?? id,
             status: "pending",
           })
         );
+
+  const displaySkills = (Object.keys(SKILL_LABELS) as HazardSkillId[]).filter(
+    (id) => skillOutputs[id] != null
+  );
 
   return (
     <div
@@ -229,7 +362,8 @@ export function HazardReportModal({ open, onClose, onStart }: HazardReportModalP
               Hazard report agent
             </h2>
             <p className="text-[11px] text-slate-500">
-              Nebius AI vision → GPS → web search → email draft
+              5 skills: VLM → location → authority → content → email
+              {result?.provider ? ` · ${result.provider}` : ""}
             </p>
           </div>
           <button
@@ -242,144 +376,142 @@ export function HazardReportModal({ open, onClose, onStart }: HazardReportModalP
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto px-5 py-4">
-          {/* Thinking steps */}
-          <div className="space-y-3">
-            {orderedSteps.map((step, i) => (
-              <div key={step.id} className="relative pl-6">
-                {i < orderedSteps.length - 1 && (
-                  <span
-                    className={`absolute left-[7px] top-5 h-[calc(100%+4px)] w-px ${
-                      step.status === "done" ? "bg-emerald-500/40" : "bg-slate-700"
-                    }`}
-                  />
-                )}
-                <span
-                  className={`absolute left-0 top-0.5 text-sm font-bold ${stepColor(step.status)} ${
-                    step.status === "running" ? "animate-pulse" : ""
-                  }`}
-                >
-                  {stepIcon(step.status)}
-                </span>
-                <p className={`text-xs font-medium ${stepColor(step.status)}`}>{step.label}</p>
-                {step.thought && (
-                  <p className="mt-1 text-[11px] leading-relaxed text-slate-400">{step.thought}</p>
-                )}
-                {step.detail && (
-                  <p className="mt-0.5 text-[10px] text-slate-500">{step.detail}</p>
-                )}
+        <div
+          className={`flex-1 overflow-y-auto px-5 py-4 ${
+            !introComplete && imagePreviewUrl ? "flex flex-col justify-center" : ""
+          }`}
+        >
+          {imagePreviewUrl && (
+            <div
+              className={
+                introComplete
+                  ? "mb-4 overflow-hidden rounded-lg border border-slate-700/60 bg-black/40"
+                  : "overflow-hidden rounded-xl border border-violet-500/30 bg-black/50 shadow-lg shadow-violet-950/40"
+              }
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={imagePreviewUrl}
+                alt="Hazard photo for analysis"
+                className={
+                  introComplete
+                    ? "max-h-52 w-full object-cover"
+                    : "max-h-[min(55vh,400px)] w-full object-contain"
+                }
+              />
+            </div>
+          )}
+
+          {introComplete && (
+            <>
+              <div className="space-y-3">
+                {orderedSteps.map((step, i) => (
+                  <div key={step.id} className="relative pl-6">
+                    {i < orderedSteps.length - 1 && (
+                      <span
+                        className={`absolute left-[7px] top-5 h-[calc(100%+4px)] w-px ${
+                          step.status === "done" ? "bg-emerald-500/40" : "bg-slate-700"
+                        }`}
+                      />
+                    )}
+                    <span
+                      className={`absolute left-0 top-0.5 text-sm font-bold ${stepColor(step.status)} ${
+                        step.status === "running" ? "animate-pulse" : ""
+                      }`}
+                    >
+                      {stepIcon(step.status)}
+                    </span>
+                    <p className={`text-xs font-medium ${stepColor(step.status)}`}>{step.label}</p>
+                    {step.thought && (
+                      <p className="mt-1 text-[11px] leading-relaxed text-slate-400">
+                        {step.thought}
+                      </p>
+                    )}
+                    {step.detail && (
+                      <p className="mt-0.5 text-[10px] text-slate-500">{step.detail}</p>
+                    )}
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
 
-          {running && (
-            <div className="mt-4 flex items-center gap-2 text-[11px] text-violet-300">
-              <span className="h-2 w-2 animate-pulse rounded-full bg-violet-400" />
-              Agent working… this may take up to a minute
-            </div>
-          )}
-
-          {error && (
-            <div className="mt-4 rounded-lg border border-red-500/30 bg-red-950/30 p-3 text-xs text-red-300">
-              {error}
-            </div>
-          )}
-
-          {/* Final email draft */}
-          {result && (
-            <div className="mt-5 space-y-3 rounded-xl border border-emerald-500/20 bg-emerald-950/10 p-4">
-              <div className="flex items-start justify-between gap-2">
-                <div>
-                  <p className="text-xs font-semibold text-emerald-200">
-                    {result.analysis.hazardType} · {result.analysis.severity}
+              {displaySkills.length > 0 && (
+                <div className="mt-5 space-y-2">
+                  <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                    Skill outputs
                   </p>
-                  <p className="mt-1 text-[11px] text-slate-400">{result.analysis.description}</p>
+                  {displaySkills.map((id) => (
+                    <SkillOutputCard
+                      key={id}
+                      skillId={id}
+                      output={skillOutputs[id]!}
+                    />
+                  ))}
                 </div>
-              </div>
-
-              <div className="space-y-2">
-                <label className="block text-[10px] uppercase tracking-wide text-slate-500">
-                  To (authority email)
-                </label>
-                <input
-                  type="email"
-                  value={editableEmail.to}
-                  onChange={(e) => setEditableEmail((p) => ({ ...p, to: e.target.value }))}
-                  className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-xs text-slate-200 outline-none focus:border-violet-500/50"
-                />
-                {result.authority.organization && (
-                  <p className="text-[10px] text-slate-500">
-                    {result.authority.organization}
-                    {result.authority.reason ? ` — ${result.authority.reason}` : ""}
-                  </p>
-                )}
-              </div>
-
-              <div className="space-y-2">
-                <label className="block text-[10px] uppercase tracking-wide text-slate-500">
-                  Subject
-                </label>
-                <input
-                  type="text"
-                  value={editableEmail.subject}
-                  onChange={(e) => setEditableEmail((p) => ({ ...p, subject: e.target.value }))}
-                  className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-xs text-slate-200 outline-none focus:border-violet-500/50"
-                />
-              </div>
-
-              <div className="space-y-2">
-                <label className="block text-[10px] uppercase tracking-wide text-slate-500">
-                  Email body
-                </label>
-                <textarea
-                  value={editableEmail.body}
-                  onChange={(e) => setEditableEmail((p) => ({ ...p, body: e.target.value }))}
-                  rows={8}
-                  className="w-full resize-y rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 font-mono text-[11px] leading-relaxed text-slate-200 outline-none focus:border-violet-500/50"
-                />
-              </div>
-
-              {result.searchResults && result.searchResults.length > 0 && (
-                <details className="text-[10px] text-slate-500">
-                  <summary className="cursor-pointer text-slate-400">
-                    Web sources ({result.searchResults.length})
-                  </summary>
-                  <ul className="mt-2 space-y-1">
-                    {result.searchResults.slice(0, 5).map((r) => (
-                      <li key={r.url}>
-                        <a
-                          href={r.url}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="text-cyan-500/80 underline"
-                        >
-                          {r.title}
-                        </a>
-                      </li>
-                    ))}
-                  </ul>
-                </details>
               )}
 
-              {result.authority.reportUrl && (
-                <a
-                  href={result.authority.reportUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="block text-[11px] text-cyan-400 underline"
-                >
-                  Official online report form
-                </a>
+              {running && (
+                <div className="mt-4 flex items-center gap-2 text-[11px] text-violet-300">
+                  <span className="h-2 w-2 animate-pulse rounded-full bg-violet-400" />
+                  Agent working… this may take up to a minute
+                </div>
               )}
 
-              {sendStatus && (
-                <p
-                  className={`text-[11px] ${emailSent ? "text-emerald-400" : "text-amber-300"}`}
-                >
-                  {sendStatus}
-                </p>
+              {error && (
+                <div className="mt-4 rounded-lg border border-red-500/30 bg-red-950/30 p-3 text-xs text-red-300">
+                  {error}
+                </div>
               )}
-            </div>
+
+              {result && (
+                <div className="mt-5 space-y-3 rounded-xl border border-emerald-500/20 bg-emerald-950/10 p-4">
+                  <div className="space-y-2">
+                    <label className="block text-[10px] uppercase tracking-wide text-slate-500">
+                      To (authority email)
+                    </label>
+                    <input
+                      type="email"
+                      value={editableEmail.to}
+                      onChange={(e) => setEditableEmail((p) => ({ ...p, to: e.target.value }))}
+                      className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-xs text-slate-200 outline-none focus:border-violet-500/50"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="block text-[10px] uppercase tracking-wide text-slate-500">
+                      Subject
+                    </label>
+                    <input
+                      type="text"
+                      value={editableEmail.subject}
+                      onChange={(e) =>
+                        setEditableEmail((p) => ({ ...p, subject: e.target.value }))
+                      }
+                      className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-xs text-slate-200 outline-none focus:border-violet-500/50"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="block text-[10px] uppercase tracking-wide text-slate-500">
+                      Email body
+                    </label>
+                    <textarea
+                      value={editableEmail.body}
+                      onChange={(e) => setEditableEmail((p) => ({ ...p, body: e.target.value }))}
+                      rows={8}
+                      className="w-full resize-y rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 font-mono text-[11px] leading-relaxed text-slate-200 outline-none focus:border-violet-500/50"
+                    />
+                  </div>
+
+                  {sendStatus && (
+                    <p
+                      className={`text-[11px] ${emailSent ? "text-emerald-400" : "text-amber-300"}`}
+                    >
+                      {sendStatus}
+                    </p>
+                  )}
+                </div>
+              )}
+            </>
           )}
         </div>
 

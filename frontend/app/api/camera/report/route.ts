@@ -1,16 +1,15 @@
 import { NextResponse } from "next/server";
-import { analyzeHazardAndReport } from "@/lib/camera/hazard-agent";
+import { analyzeHazardAndReport, hazardReportAvailable } from "@/lib/camera/hazard-agent";
 import type { HazardReportRequest } from "@/lib/camera/types";
-import { serverEnv } from "@/lib/config/env";
 
 export const maxDuration = 120;
 
 export async function POST(request: Request) {
-  if (!serverEnv.nebiusai.enabled) {
+  if (!hazardReportAvailable()) {
     return NextResponse.json(
       {
         error:
-          "NEBUISAI_API_KEY missing. Add it to .env.local for hazard reports.",
+          "No hazard report backend configured. Start backend/layla-nemoclaw or add NEBUISAI_API_KEY to .env.local.",
       },
       { status: 503 }
     );

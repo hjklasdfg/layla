@@ -1,6 +1,10 @@
-import { runHazardReportPipeline } from "@/lib/camera/hazard-agent";
-import type { HazardReportRequest, HazardStreamEvent } from "@/lib/camera/types";
-import { serverEnv } from "@/lib/config/env";
+import { hazardReportAvailable, runHazardReportPipeline } from "@/lib/camera/hazard-agent";
+import type {
+  HazardReportRequest,
+  HazardSkillId,
+  HazardSkillOutputs,
+  HazardStreamEvent,
+} from "@/lib/camera/types";
 
 export const maxDuration = 120;
 
@@ -9,10 +13,11 @@ function sseEncode(event: HazardStreamEvent): Uint8Array {
 }
 
 export async function POST(request: Request) {
-  if (!serverEnv.nebiusai.enabled) {
+  if (!hazardReportAvailable()) {
     return new Response(
       JSON.stringify({
-        error: "NEBUISAI_API_KEY missing. Add it to .env.local for hazard reports.",
+        error:
+          "No hazard report backend configured. Start backend/layla-nemoclaw or add NEBUISAI_API_KEY to .env.local.",
       }),
       { status: 503, headers: { "Content-Type": "application/json" } }
     );
@@ -49,9 +54,16 @@ export async function POST(request: Request) {
       };
 
       try {
-        const result = await runHazardReportPipeline(body, (step) => {
-          send({ type: "step", step });
-        });
+        const result = await runHazardReportPipeline(
+          body,
+          (step) => send({ type: "step", step }),
+          (skill, output) =>
+            send({
+              type: "skill",
+              skill: skill as HazardSkillId,
+              output: output as HazardSkillOutputs[HazardSkillId],
+            })
+        );
         send({ type: "complete", result });
       } catch (err) {
         const message = err instanceof Error ? err.message : "Hazard report failed";

@@ -1,8 +1,13 @@
 import "server-only";
 
+import { runNemoclawHazardReport } from "@/lib/camera/hazard-nemoclaw-agent";
 import { runNebiusHazardAgent } from "@/lib/camera/hazard-nebius-agent";
 import { callNebiusVisionJson } from "@/lib/llm/nebius-json";
 import { serverEnv } from "@/lib/config/env";
+import {
+  fallbackGpsForLandmark,
+  formatFallbackLocationSummary,
+} from "@/lib/mobility/fallback-gps";
 import { reverseGeocode } from "@/services/osm/reverse-geocode";
 import type {
   AuthorityContact,
@@ -11,11 +16,38 @@ import type {
   HazardReportRequest,
   HazardReportResult,
   HazardReportStep,
+  HazardSkillCallback,
+  HazardSkillOutputs,
   HazardStepCallback,
   ResolvedLocation,
 } from "./types";
+import type { GpsLocation } from "@/lib/mobility/sensors";
 
 const NOMINATIM_URL = "https://nominatim.openstreetmap.org";
+
+function resolveEffectiveReportGps(request: HazardReportRequest): {
+  gps: GpsLocation;
+  simulated: boolean;
+  landmarkId?: string;
+} | null {
+  if (request.gps) {
+    return { gps: request.gps, simulated: false };
+  }
+
+  const disabled = ["false", "0", "off", "none"].includes(
+    serverEnv.cameraHazard.hazardReportFallbackLocation.toLowerCase()
+  );
+  if (disabled) return null;
+
+  const landmarkId = serverEnv.cameraHazard.hazardReportFallbackLocation;
+
+  if (!landmarkId) return null;
+
+  const gps = fallbackGpsForLandmark(landmarkId);
+  if (!gps) return null;
+
+  return { gps, simulated: true, landmarkId };
+}
 
 function emit(onStep: HazardStepCallback | undefined, step: HazardReportStep) {
   onStep?.(step);
@@ -141,24 +173,30 @@ async function sendEmailViaResend(email: HazardReportEmail): Promise<boolean> {
   return res.ok;
 }
 
-const INITIAL_STEPS: HazardReportStep[] = [
-  { id: "analyze_photo", label: "Identifying hazard type (Nebius AI vision)", status: "pending" },
-  { id: "locate_gps", label: "Resolving location from GPS", status: "pending" },
-  { id: "search_web", label: "Searching online for reporting authority", status: "pending" },
-  { id: "find_authority", label: "Finding organization email (Nebius AI)", status: "pending" },
-  { id: "draft_email", label: "Drafting report email (Nebius AI)", status: "pending" },
+const NEBIUS_STEPS: HazardReportStep[] = [
+  { id: "analyse_image", label: "Analyse image (Nebius vision)", status: "pending" },
+  { id: "resolve_location", label: "Resolve location (GPS)", status: "pending" },
+  { id: "search_authority", label: "Search authority (Nebius web)", status: "pending" },
+  { id: "prepare_content", label: "Prepare report content", status: "pending" },
+  { id: "prepare_email", label: "Prepare email draft", status: "pending" },
   { id: "ready", label: "Ready — click Send", status: "pending" },
 ];
 
-export async function runHazardReportPipeline(
-  request: HazardReportRequest,
-  onStep?: HazardStepCallback
+async function runNebiusHazardReportPipeline(
+  effectiveRequest: HazardReportRequest,
+  effectiveLocation: ReturnType<typeof resolveEffectiveReportGps>,
+  onStep?: HazardStepCallback,
+  onSkill?: HazardSkillCallback
 ): Promise<HazardReportResult> {
-  if (!serverEnv.nebiusai.enabled) {
-    throw new Error("NEBUISAI_API_KEY not configured. Add it to .env.local.");
-  }
-
-  const steps: HazardReportStep[] = INITIAL_STEPS.map((s) => ({ ...s }));
+  const skills: HazardSkillOutputs = {};
+  const emitSkill = <K extends keyof HazardSkillOutputs>(
+    id: K,
+    output: HazardSkillOutputs[K]
+  ) => {
+    skills[id] = output;
+    if (output) onSkill?.(id, output);
+  };
+  const steps: HazardReportStep[] = NEBIUS_STEPS.map((s) => ({ ...s }));
 
   const updateStep = (id: HazardReportStep["id"], patch: Partial<HazardReportStep>) => {
     const idx = steps.findIndex((s) => s.id === id);
@@ -167,76 +205,106 @@ export async function runHazardReportPipeline(
     emit(onStep, steps[idx]);
   };
 
-  // Step 1: Vision — hazard type
-  updateStep("analyze_photo", {
+  updateStep("analyse_image", {
     status: "running",
     thought: "Nebius AI vision is classifying the hazard type and severity…",
   });
 
   let analysis: HazardAnalysis;
   try {
-    analysis = await analyzeImage(request);
-    updateStep("analyze_photo", {
+    analysis = await analyzeImage(effectiveRequest);
+    emitSkill("analyse_image", {
+      hazard_detected: true,
+      hazard_type: analysis.hazardType,
+      severity: analysis.severity,
+      description: analysis.description,
+      accessibility_impact: analysis.accessibilityImpact,
+      model: "nebius-vision",
+    });
+    updateStep("analyse_image", {
       status: "done",
       thought: `Hazard type: ${analysis.hazardType} (${analysis.severity}).`,
       detail: analysis.description,
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Photo analysis failed";
-    updateStep("analyze_photo", { status: "error", thought: message });
+    updateStep("analyse_image", { status: "error", thought: message });
     throw err;
   }
 
-  // Step 2: GPS
-  updateStep("locate_gps", {
+  const fallbackSummary =
+    effectiveLocation?.simulated && effectiveLocation.landmarkId && effectiveRequest.gps
+      ? formatFallbackLocationSummary(
+          effectiveRequest.gps,
+          effectiveLocation.landmarkId
+        )
+      : null;
+
+  updateStep("resolve_location", {
     status: "running",
-    thought: request.gps
-      ? `Reverse geocoding ${request.gps.latitude.toFixed(5)}, ${request.gps.longitude.toFixed(5)}…`
-      : "No GPS — agent will use visual clues only.",
+    thought: fallbackSummary
+      ? `${fallbackSummary} — resolving address…`
+      : effectiveRequest.gps
+        ? `Reverse geocoding ${effectiveRequest.gps.latitude.toFixed(5)}, ${effectiveRequest.gps.longitude.toFixed(5)}…`
+        : "No GPS — agent will use visual clues only.",
   });
 
   let resolvedLocation: ResolvedLocation | undefined;
   try {
-    if (request.gps) {
-      const located = await resolveLocationFromGps(request.gps);
+    if (effectiveRequest.gps) {
+      const located = await resolveLocationFromGps(effectiveRequest.gps);
       resolvedLocation = located;
-      updateStep("locate_gps", {
+      emitSkill("resolve_location", {
+        lat: located.gps?.latitude,
+        lng: located.gps?.longitude,
+        display_name: located.displayName,
+        road: located.road,
+        borough: located.borough,
+        postcode: located.postcode,
+        source: "nominatim",
+      });
+      updateStep("resolve_location", {
         status: "done",
-        thought: located.borough
-          ? `Located in ${located.borough}${located.road ? `, ${located.road}` : ""}.`
-          : `Located near ${located.displayName}.`,
+        thought: fallbackSummary
+          ? `${fallbackSummary}${located.borough ? ` (${located.borough})` : ""}.`
+          : located.borough
+            ? `Located in ${located.borough}${located.road ? `, ${located.road}` : ""}.`
+            : `Located near ${located.displayName}.`,
         detail: located.displayName,
       });
     } else {
-      updateStep("locate_gps", {
+      updateStep("resolve_location", {
         status: "done",
         thought: "No GPS — enable location for better authority matching.",
       });
     }
   } catch (err) {
     const message = err instanceof Error ? err.message : "Geocoding failed";
-    updateStep("locate_gps", {
+    updateStep("resolve_location", {
       status: "done",
-      thought: `GPS lookup failed (${message}). Continuing with coordinates.`,
+      thought: fallbackSummary
+        ? `${fallbackSummary}.`
+        : `GPS lookup failed (${message}). Continuing with coordinates.`,
     });
-    if (request.gps) {
+    if (effectiveRequest.gps) {
       resolvedLocation = {
-        displayName: `${request.gps.latitude.toFixed(5)}, ${request.gps.longitude.toFixed(5)}`,
+        displayName: fallbackSummary
+          ? "St Pancras, London"
+          : `${effectiveRequest.gps.latitude.toFixed(5)}, ${effectiveRequest.gps.longitude.toFixed(5)}`,
         gps: {
-          latitude: request.gps.latitude,
-          longitude: request.gps.longitude,
+          latitude: effectiveRequest.gps.latitude,
+          longitude: effectiveRequest.gps.longitude,
         },
       };
     }
   }
 
-  // Steps 3–5: Nebius agentic loop (plan searches → web search → extract email + draft)
-  updateStep("search_web", {
+  updateStep("search_authority", {
     status: "running",
     thought: "Nebius AI is planning web searches for the right reporting authority…",
   });
-  updateStep("find_authority", { status: "pending" });
-  updateStep("draft_email", { status: "pending" });
+  updateStep("prepare_content", { status: "pending" });
+  updateStep("prepare_email", { status: "pending" });
 
   let authority: AuthorityContact;
   let email: HazardReportEmail;
@@ -248,7 +316,7 @@ export async function runHazardReportPipeline(
     const agent = await runNebiusHazardAgent(
       analysis,
       resolvedLocation,
-      request.locationDescription
+      effectiveRequest.locationDescription
     );
 
     authority = agent.authority;
@@ -257,26 +325,60 @@ export async function runHazardReportPipeline(
     searchQueries = agent.searchQueries;
     searchResults = agent.searchResults;
 
-    updateStep("search_web", {
+    emitSkill("search_authority", {
+      authority_name: authority.organization,
+      department: authority.name,
+      email: authority.email,
+      source: "nebius_web_search",
+      query: agent.searchQueries[0],
+      search_results: agent.searchResults.map((r) => ({
+        title: r.title,
+        url: r.url,
+        description: r.snippet,
+      })),
+    });
+    updateStep("search_authority", {
       status: "done",
       thought: agent.searchStrategy,
-      detail: `${agent.searchResults.length} results from ${agent.searchQueries.length} queries`,
+      detail: `${agent.searchResults.length} results · ${authority.organization} (${agent.confidence})`,
     });
-    updateStep("find_authority", {
+
+    const content = {
+      headline: `${analysis.hazardType} — ${analysis.severity}`,
+      hazard_type: analysis.hazardType,
+      severity: analysis.severity,
+      description: analysis.description,
+      accessibility_impact: analysis.accessibilityImpact,
+      location_summary: resolvedLocation?.displayName,
+      facts: [
+        `Hazard: ${analysis.hazardType}`,
+        `Severity: ${analysis.severity}`,
+        resolvedLocation?.borough ? `Borough: ${resolvedLocation.borough}` : "",
+      ].filter(Boolean),
+      suggested_action: analysis.suggestedAction,
+    };
+    emitSkill("prepare_content", content);
+    updateStep("prepare_content", {
       status: "done",
-      thought: searchSummary,
-      detail: `${authority.organization} · ${email.to} (${agent.confidence} confidence)`,
+      thought: content.headline,
+      detail: resolvedLocation?.road ?? resolvedLocation?.displayName,
     });
-    updateStep("draft_email", {
+
+    emitSkill("prepare_email", {
+      ...email,
+      recipient_name: authority.name,
+      organization: authority.organization,
+    });
+    updateStep("prepare_email", {
       status: "done",
       thought: `Email drafted to ${email.to}.`,
       detail: email.subject,
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Nebius AI agent failed";
-    updateStep("search_web", { status: "error", thought: message });
-    updateStep("find_authority", { status: "error", thought: message });
-    updateStep("draft_email", { status: "error", thought: message });
+    updateStep("search_authority", { status: "error", thought: message });
+    updateStep("prepare_content", { status: "error", thought: message });
+    updateStep("prepare_email", { status: "error", thought: message });
     throw err;
   }
 
@@ -295,7 +397,61 @@ export async function runHazardReportPipeline(
     searchQueries,
     searchResults,
     steps,
+    skills,
+    provider: "nebius",
   };
+}
+
+export function hazardReportAvailable(): boolean {
+  return serverEnv.laylaNemoclaw.enabled || serverEnv.nebiusai.enabled;
+}
+
+export async function runHazardReportPipeline(
+  request: HazardReportRequest,
+  onStep?: HazardStepCallback,
+  onSkill?: HazardSkillCallback
+): Promise<HazardReportResult> {
+  if (!hazardReportAvailable()) {
+    throw new Error(
+      "No hazard report backend configured. Start backend/layla-nemoclaw or add NEBUISAI_API_KEY to .env.local."
+    );
+  }
+
+  const effectiveLocation = resolveEffectiveReportGps(request);
+  const effectiveRequest: HazardReportRequest = effectiveLocation
+    ? { ...request, gps: effectiveLocation.gps }
+    : request;
+
+  if (serverEnv.laylaNemoclaw.enabled && effectiveRequest.gps) {
+    try {
+      return await runNemoclawHazardReport(effectiveRequest, onStep, onSkill);
+    } catch (nemoclawErr) {
+      if (!serverEnv.nebiusai.enabled) {
+        throw nemoclawErr;
+      }
+      const reason =
+        nemoclawErr instanceof Error ? nemoclawErr.message : "NemoClaw agent failed";
+      onStep?.({
+        id: "analyse_image",
+        label: "Analyse image (NemoClaw)",
+        status: "running",
+        thought: `NemoClaw unavailable (${reason}). Falling back to Nebius…`,
+      });
+    }
+  }
+
+  if (!serverEnv.nebiusai.enabled) {
+    throw new Error(
+      "NEBUISAI_API_KEY not configured. Add it to .env.local for hazard report fallback."
+    );
+  }
+
+  return runNebiusHazardReportPipeline(
+    effectiveRequest,
+    effectiveLocation,
+    onStep,
+    onSkill
+  );
 }
 
 /** @deprecated Use runHazardReportPipeline */
