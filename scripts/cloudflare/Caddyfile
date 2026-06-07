@@ -7,6 +7,10 @@
         reverse_proxy open-webui:8080
     }
 
+    handle /mobility/* {
+        reverse_proxy host.docker.internal:8000
+    }
+
     handle {
         reverse_proxy host.docker.internal:3000
     }

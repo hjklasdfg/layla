@@ -75,13 +75,13 @@ export async function requestNemotronMobilityPlan(
     throw new Error("NEMOTRON_BASE_URL not configured");
   }
 
-  const { journey, preference, tflJourney } = request;
+  const { journey, preference, tflJourney, journeyAnchors } = request;
   const slimRequest = slimMobilityPlanRequestForGemini(request);
   const llmInput = buildLlmPlanInput(slimRequest, serverEnv.nemotron.model);
 
   const [parsed, enrichment] = await Promise.all([
     callNemotronPlan(llmInput.systemPrompt, llmInput.userPrompt),
-    buildMobilityRoutesFromCandidates(tflJourney.candidates, preference.profile),
+    buildMobilityRoutesFromCandidates(tflJourney.candidates, preference.profile, journeyAnchors),
   ]);
 
   const { routes: mobilityRoutes, osmWarning } = enrichment;

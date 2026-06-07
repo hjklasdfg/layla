@@ -340,7 +340,7 @@ async function main() {
   }
 
   const apiKey = env.GEMINI_API_KEY;
-  const model = env.GEMINI_MODEL || "gemini-2.0-flash";
+  const model = env.GEMINI_MODEL || "gemini-2.5-flash";
   if (!apiKey) {
     console.error("\nGEMINI_API_KEY missing in frontend/.env.local");
     console.error("Use --dry-run to see input shape without calling Gemini.\n");

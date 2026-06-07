@@ -22,7 +22,7 @@ flowchart TB
     APIS["🔌 Next.js API Routes<br/>/api/mobility · /api/camera · /api/voice"]:::app
     TFL["🚇 TfL Unified API<br/>Journey Planner"]:::external
     EL["🎙️ ElevenLabs<br/>Scribe STT · TTS"]:::external
-    GEM["✨ Gemini 2.0 Flash<br/>Vision · Hazard Analysis"]:::external
+    NEB["☁️ Nebius AI<br/>Hazard vision + civic email agent"]:::external
     NEM["🧠 Nemotron-3-Nano-Omni-30B<br/>Mobility Planning · Reasoning"]:::model
     VLLM["⚙️ vLLM Server<br/>localhost:18000"]:::runtime
     CADDY["🔀 Caddy Proxy<br/>:80 · :8081 · :3002"]:::runtime
@@ -36,7 +36,7 @@ flowchart TB
     FE --> APIS
     APIS -->|Journey candidates| TFL
     APIS -->|STT / TTS| EL
-    APIS -->|Photo hazard| GEM
+    APIS -->|Hazard photo analysis + email agent| NEB
     APIS -->|Route reasoning| VLLM
     VLLM --> NEM
     NEM --> DGX
@@ -130,7 +130,7 @@ All containers share the `vllm-net` bridge network — internal DNS resolution b
 
 | Container | Image | Network | Ports | Restart |
 |---|---|---|---|---|
-| `vllm-active` | `vllm-openai` (NVIDIA) | `vllm-net` | `18000` | manual |
+| `vllm-active` | `vllm/vllm-openai:v0.20.0-aarch64-cu130` | `vllm-net` | `18000` | `unless-stopped` |
 | `open-webui` | `ghcr.io/open-webui/open-webui` | `vllm-net` | `3001→8080` | `unless-stopped` |
 | `caddy-proxy` | `caddy:alpine` | `vllm-net` + host bridge | `80`, `8081`, `3002` | `unless-stopped` |
 
@@ -142,16 +142,16 @@ All containers share the `vllm-net` bridge network — internal DNS resolution b
 flowchart TB
     REQ["📥 Mobility Plan Request<br/>GPS · Voice · Camera · Profile"]:::entry
     TFL["🚇 TfL Journey API<br/>Raw route candidates"]:::external
-    LLM["🧠 LLM Provider<br/>nemotron | gemini | backend"]:::decision
-    NEM["⚙️ Nemotron-3-Nano-Omni-30B<br/>NVFP4 quantised · 128K ctx<br/>multimodal reasoning"]:::model
-    GEM["✨ Gemini 2.0 Flash<br/>Vision hazard analysis<br/>email drafting"]:::external
+    LLM["🧠 LLM Provider<br/>nemotron | nebius | backend"]:::decision
+    DGX["⚙️ Nemotron on DGX<br/>vLLM · NVFP4 · 128K ctx"]:::model
+    NEB["☁️ Nebius Cloud<br/>Nemotron-3-Nano-Omni<br/>API-compatible endpoint"]:::external
     OUT["🗺️ Route Recommendation<br/>uiText + voiceText + scores"]:::output
 
     REQ --> TFL --> LLM
-    LLM -->|"LLM_PROVIDER=nemotron"| NEM
-    LLM -->|"LLM_PROVIDER=gemini"| GEM
-    NEM --> OUT
-    GEM --> OUT
+    LLM -->|"LLM_PROVIDER=nemotron"| DGX
+    LLM -->|"type=nebius"| NEB
+    DGX --> OUT
+    NEB --> OUT
 
     classDef entry    fill:#1e1b4b,color:#c7d2fe,stroke:#4338ca,stroke-width:2px
     classDef decision fill:#431407,color:#fed7aa,stroke:#ea580c
@@ -175,8 +175,8 @@ flowchart TB
 
 | Value | Model | Use case |
 |---|---|---|
-| `nemotron` | Nemotron-3-Nano-Omni-30B on DGX | Default — on-device, no cloud cost |
-| `gemini` | Gemini 2.0 Flash | Cloud fallback, also handles vision |
+| `nemotron` | Nemotron-3-Nano-Omni-30B on DGX vLLM | Default — on-device, no cloud cost |
+| `nebius` | Nemotron-3-Nano-Omni via Nebius cloud | Cloud fallback (`--type nebius` in scripts) |
 | `backend` | NemoClaw backend API | Custom backend mobility contract |
 
 ---
@@ -238,7 +238,7 @@ flowchart TB
 | `NEMOTRON_BASE_URL` | ✅ | vLLM base URL (`https://layla.ai-cloud.io`) |
 | `NEMOTRON_MODEL` | — | Model name (default: Nemotron-3-Nano-Omni-30B-NVFP4) |
 | `LLM_PROVIDER` | — | `nemotron` \| `gemini` \| `backend` (default: `nemotron`) |
-| `GEMINI_API_KEY` | ✅ | Google Gemini — hazard vision + email |
+| `GEMINI_API_KEY` | — | Google Gemini — optional hazard vision fallback |
 | `ELEVENLABS_API_KEY` | ✅ | ElevenLabs — Scribe STT + TTS |
 | `ELEVENLABS_VOICE_ID` | — | TTS voice ID |
 | `BACKEND_API_URL` | — | NemoClaw backend (if `LLM_PROVIDER=backend`) |

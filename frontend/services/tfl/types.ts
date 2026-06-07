@@ -96,10 +96,13 @@ export interface TfLJourneyLeg {
     lon?: number;
   };
   path?: {
-    lineString?: Array<
-      | { lat?: number; lon?: number }
-      | [number, number]
-    >;
+    /** TfL often returns this as a JSON string of [lat, lon] pairs. */
+    lineString?:
+      | string
+      | Array<
+          | { lat?: number; lon?: number }
+          | [number, number]
+        >;
   };
 }
 

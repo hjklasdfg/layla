@@ -19,6 +19,20 @@ export interface BackendMobilityPlanRequest {
     to: string;
     candidates: RouteCandidate[];
   };
+  /** Geocoded journey endpoints for map path validation. */
+  journeyAnchors?: JourneyAnchorPoints;
+}
+
+export interface JourneyMapPoint {
+  lat: number;
+  lng: number;
+  name: string;
+}
+
+export interface JourneyAnchorPoints {
+  start?: JourneyMapPoint | null;
+  end?: JourneyMapPoint | null;
+  maxEndpointDriftKm?: number;
 }
 
 export interface RouteExplanation {
@@ -41,6 +55,9 @@ export interface BackendMobilityPlanResponse {
     count: number;
     profile: UserPreference["profile"];
     osmWarning?: string;
+    /** Geocoded from user journey labels — use for map A/B pins. */
+    startPoint?: JourneyMapPoint;
+    endPoint?: JourneyMapPoint;
     llmInput?: LlmPlanInput;
     /** @deprecated use llmInput */
     geminiInput?: LlmPlanInput;

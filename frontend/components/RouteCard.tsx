@@ -68,6 +68,7 @@ interface RouteCardProps {
   isSelected?: boolean;
   onSelect?: () => void;
   prevSignals?: AccessibilitySignals;
+  personaLabels?: string[];
 }
 
 export function RouteCard({
@@ -76,6 +77,7 @@ export function RouteCard({
   isSelected,
   onSelect,
   prevSignals,
+  personaLabels = [],
 }: RouteCardProps) {
   const { signals } = route;
 
@@ -104,12 +106,25 @@ export function RouteCard({
         </span>
       )}
 
+      {personaLabels.length > 0 && (
+        <div className="mb-2 flex flex-wrap gap-1.5 pt-1">
+          {personaLabels.map((label) => (
+            <span
+              key={label}
+              className="rounded-full border border-cyan-500/30 bg-cyan-500/10 px-2 py-0.5 text-[10px] font-medium text-cyan-200"
+            >
+              Best for {label}
+            </span>
+          ))}
+        </div>
+      )}
+
       <header className="mb-4 flex items-start justify-between gap-3 pt-1">
         <div>
           <p className="font-mono text-[10px] uppercase tracking-widest text-slate-500">
             Route {route.routeId}
           </p>
-          <h3 className="text-lg font-semibold text-white">{route.name}</h3>
+          <h3 className="text-lg font-semibold text-white">{(route as {name?: string}).name ?? `Route ${route.routeId}`}</h3>
           {(route.steps?.length ?? 0) > 0 ? (
             <p className="mt-1 font-mono text-[10px] leading-relaxed text-slate-400">
               {route.steps!.map((s) =>
@@ -121,11 +136,11 @@ export function RouteCard({
               ).join(" → ")}
             </p>
           ) : (
-            (route.transferCount !== undefined ||
-              route.walkingMinutes !== undefined) && (
+            ((route as {transferCount?: number}).transferCount !== undefined ||
+              (route as {walkingMinutes?: number}).walkingMinutes !== undefined) && (
               <p className="mt-1 font-mono text-[10px] text-slate-500">
-                {route.transferCount ?? 0} transfers · {route.walkingMinutes ?? 0}{" "}
-                min walk
+                {(route as {transferCount?: number}).transferCount ?? 0} transfers ·{" "}
+                {(route as {walkingMinutes?: number}).walkingMinutes ?? 0} min walk
               </p>
             )
           )}
@@ -136,15 +151,15 @@ export function RouteCard({
             {route.etaMin}
             <span className="text-sm text-slate-400"> min</span>
           </p>
-          {(route.additionalWaitMin ?? 0) > 0 && (
+          {((route as {additionalWaitMin?: number}).additionalWaitMin ?? 0) > 0 && (
             <p className="mt-0.5 font-mono text-[10px] text-red-300">
-              incl. +{route.additionalWaitMin} min wait
+              incl. +{(route as {additionalWaitMin?: number}).additionalWaitMin} min wait
             </p>
           )}
-          {route.plannedEtaMin !== undefined &&
-            route.plannedEtaMin !== route.etaMin && (
+          {(route as {plannedEtaMin?: number}).plannedEtaMin !== undefined &&
+            (route as {plannedEtaMin?: number}).plannedEtaMin !== route.etaMin && (
               <p className="font-mono text-[10px] text-slate-600 line-through">
-                {route.plannedEtaMin} min planned
+                {(route as {plannedEtaMin?: number}).plannedEtaMin} min planned
               </p>
             )}
         </div>
@@ -212,7 +227,7 @@ export function RouteCard({
             Key Risks
           </h4>
           <ul className="space-y-1.5">
-            {route.risks.map((risk) => (
+            {((route as {risks?: string[]}).risks ?? []).map((risk) => (
               <li key={risk} className="text-sm leading-snug text-slate-400">
                 {risk}
               </li>
@@ -225,7 +240,7 @@ export function RouteCard({
             Key Strengths
           </h4>
           <ul className="space-y-1.5">
-            {route.strengths.map((strength) => (
+            {((route as {strengths?: string[]}).strengths ?? []).map((strength) => (
               <li key={strength} className="text-sm leading-snug text-slate-400">
                 {strength}
               </li>
