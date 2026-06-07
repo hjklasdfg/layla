@@ -39,7 +39,7 @@ export function AskLaylaPanel({
         )}
       </div>
       <p className="-mt-1 text-[11px] text-slate-500">
-        Speak or type — safety, noise, accessibility, transit · Nemotron on the DGX Spark
+        Use the mic above, or type — safety, noise, accessibility, transit · Nemotron on the DGX Spark
       </p>
 
       <form

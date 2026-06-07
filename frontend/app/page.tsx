@@ -328,6 +328,7 @@ export default function Home() {
   }
 
   async function fetchNemotronIntent(text: string): Promise<{
+    kind?: "route" | "question";
     start?: string;
     destination?: string;
     profile?: UserPreference["profile"];
@@ -388,6 +389,11 @@ export default function Home() {
 
     // Nemotron parses the utterance (local on the Spark); regex parse as fallback.
     const ai = await fetchNemotronIntent(text);
+    if (ai?.kind === "question") {
+      // a general question -> answer it aloud (not a journey)
+      void askLayla(text);
+      return;
+    }
     const regex = parseVoiceIntent(text);
     const profilePick = ai?.profile ?? regex.profile;
     const priorityPick = ai?.priority;
