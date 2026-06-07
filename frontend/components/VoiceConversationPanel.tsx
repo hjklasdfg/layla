@@ -128,21 +128,38 @@ export function VoiceConversationPanel({ onMapCommand }: Props) {
   const status = conversation.status; // "disconnected" | "connecting" | "connected"
   const active = status === "connected" || status === "connecting";
 
-  const toggle = useCallback(() => {
+  const toggle = useCallback(async () => {
     if (active) {
       void conversation.endSession();
       void refreshSignedUrl(); // re-arm for the next session
       return;
     }
     setError(null);
-    // Everything below must stay synchronous within the click gesture so the
-    // SDK's output AudioContext is created+resumed while the page is still
-    // user-activated — otherwise the agent's audio is received but never plays.
+    // Unlock AudioContext synchronously within the user gesture so the SDK's
+    // output audio plays on iOS Safari (AudioContext resume requires user activation).
+    unlockAudioPlayback();
+
+    // iOS Safari: getUserMedia must be the first await in the user-gesture chain.
+    // The ElevenLabs SDK internally awaits requestWakeLock() before its own
+    // getUserMedia call, consuming the activation context. Pre-acquiring here
+    // (as the very first await) triggers the iOS permission prompt while the
+    // gesture is still live; subsequent SDK-internal getUserMedia calls succeed
+    // because permission is now cached for this page session.
+    if (typeof navigator !== "undefined" && navigator.mediaDevices?.getUserMedia) {
+      try {
+        const prime = await navigator.mediaDevices.getUserMedia({ audio: true });
+        prime.getTracks().forEach((t) => t.stop());
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : "Could not start voice";
+        setError(msg.toLowerCase().includes("permission") ? "Microphone access needed." : msg);
+        return;
+      }
+    }
+
     try {
-      unlockAudioPlayback();
       const url = signedUrlRef.current;
-      // startSession() from the react hook returns void and runs the async
-      // setup (mic, audio context) internally; SDK errors surface via onError.
+      // startSession() runs async setup (mic, audio context) internally;
+      // SDK errors surface via onError.
       conversation.startSession(url ? { signedUrl: url } : undefined);
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Could not start voice";

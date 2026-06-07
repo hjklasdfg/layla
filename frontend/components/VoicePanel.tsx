@@ -416,6 +416,33 @@ const VoicePanelActive = forwardRef<
     setMicDenied(false);
     setScribeError(null);
 
+    // iOS Safari requires getUserMedia to be the first await in the user-gesture
+    // chain. Any prior await (unlockAudio, fetch) consumes the activation context
+    // and the subsequent SDK-internal getUserMedia hangs or is silently rejected.
+    // Pre-acquire here so the permission prompt fires while the gesture is live;
+    // the ElevenLabs SDK acquires its own stream inside scribe.connect().
+    if (typeof navigator !== "undefined" && navigator.mediaDevices?.getUserMedia) {
+      let primeStream: MediaStream | null = null;
+      try {
+        primeStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "";
+        setConnecting(false);
+        if (
+          msg.toLowerCase().includes("not allowed") ||
+          msg.toLowerCase().includes("permission") ||
+          msg.toLowerCase().includes("denied")
+        ) {
+          setMicDenied(true);
+        } else {
+          setScribeError(msg || "Microphone access failed");
+        }
+        return false;
+      } finally {
+        primeStream?.getTracks().forEach((t) => t.stop());
+      }
+    }
+
     if (!userIdRef.current) {
       userIdRef.current = getVoiceUserId();
     }
