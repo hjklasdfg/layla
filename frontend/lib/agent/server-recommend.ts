@@ -58,16 +58,24 @@ function resolveProvider(): AgentProvider {
   if (provider === "mock") {
     return new MockAgentProvider();
   }
+
   if (provider === "backend") {
-    if (!serverEnv.backend.enabled) {
-      return new MockAgentProvider();
-    }
+    return serverEnv.backend.enabled ? new BackendProvider() : new MockAgentProvider();
+  }
+
+  if (provider === "gemini") {
+    return serverEnv.gemini.enabled ? new GeminiProvider() : new MockAgentProvider();
+  }
+
+  if (serverEnv.backend.enabled) {
     return new BackendProvider();
   }
-  if (provider === "gemini") {
+
+  if (serverEnv.gemini.enabled) {
     return new GeminiProvider();
   }
-  return new BackendProvider();
+
+  return new MockAgentProvider();
 }
 
 export async function generateMobilityRecommendationServer(
