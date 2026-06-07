@@ -6,6 +6,8 @@ version: "1.0"
 
 # 🧭 Layla — Accessibility Mobility Intelligence
 
+Try it yourself: [https://layla.ai-cloud.io](https://layla.ai-cloud.io)
+
 **A voice-first mobility assistant for people the maps forget** — blind and low-vision travellers,
 wheelchair users, older people, and anyone walking home at night.
 Built at **NVIDIA Hack for Impact, London**, on a **DGX Spark / HP Nano AI Station (GB10 Grace
