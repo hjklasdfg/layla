@@ -26,7 +26,7 @@ link: https://airtable.com/appcHdAhU9U1Eg6eo/pagqXe6ElIlXx6oa3/form
 - Yilin Lee — <yilin@…>
 - Yao
 - Charles Cai — <charles.cai@socialogix.net>
-- Mark Xiaoyi Sun - < gmail.com>
+- Mark Xiaoyi Sun - <sxy.hj156@gmail.com>
 
 ## Submission Description *
 Layla is a voice-first navigation assistant for people with special mobility needs
