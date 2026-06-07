@@ -79,7 +79,6 @@ export function useCameraStream(options: UseCameraStreamOptions = {}) {
       };
       if (Array.isArray(payload.hazards)) {
         setHazardResult(payload);
-        if (payload.faked) setHazardMode("fake-loop");
         options.onHazardResult?.(payload);
       }
     },
