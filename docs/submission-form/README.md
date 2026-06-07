@@ -22,33 +22,22 @@ link: https://airtable.com/appcHdAhU9U1Eg6eo/pagqXe6ElIlXx6oa3/form
 **Layla Team**
 
 ## Team Member Names & Email Addresses *
-- Rocky — <…>
-- Yilin Lee — <yilin@…>
-- Yao
+- Yilin Li — <yilinlee714@gmail.com>
+- Ningqian Yang — <ningqian.y@gmail.com>
+- Yao Gong - <gy960902@gmail.com>
 - Charles Cai — <charles.cai@socialogix.net>
 - Mark Xiaoyi Sun - <sxy.hj156@gmail.com>
 
 ## Submission Description *
-Layla is a voice-first navigation assistant for people with special mobility needs
-(blind, wheelchair, elderly, night-safety personas). It listens, sees and reasons
-on-device on an **NVIDIA DGX Spark (GB10 Grace Blackwell)**, combining a multimodal
-LLM (**Nemotron-3-Nano-Omni-30B, NVFP4**) with live **Transport for London** data,
-**City of London** open data (OSM footways, accessibility points, crime, road noise,
-air quality, London Police crime incidences), a **YOLO** live-camera hazard watch, and an agentic **hazard-report
-pipeline** (Nebious TokenFactory VLM → reverse-geocode → council search → email draft) packaged as
-**NVIDIA NemoClaw skills**. Voice in/out is handled by ElevenLabs ElevenAgents (**high-quality ASR, eleven_flash_v2 TTS, and turn_v2 turn-taking**).
+Layla is a voice-first navigation assistant for people with special mobility needs (blind, wheelchair, elderly, night-safety personas). It listens, sees and reasons on-device on an **NVIDIA DGX Spark / HP Nano AI Station (GB10 Grace Blackwell)**, combining a multimodal LLM (**Nemotron-3-Nano-Omni-30B, NVFP4**) with live **Transport for London** data, 
+**City of London** open data (OSM footways, accessibility points, crime, road noise, air quality, London Police crime incidences), a **YOLO** live-camera hazard watch, and an agentic crowdsourcing **Hazard Report Pipeline** (Nebious TokenFactory VLM → reverse-geocode → council search → email draft) packaged as **NVIDIA NemoClaw skills**. Voice in/out is handled by **ElevenLabs ElevenAgents** (**VAD, ASR, TTS** with custom LLM support).
 
 What's new vs. a normal journey planner:
-- **Re-routes per persona**, not re-ranks — different edge costs → different optimal
-  path for blind / wheelchair / elderly / night-safety.
-- **Three-layer accessibility**: TfL step-free (transit), OSM street features
-  (kerbs/tactile/steps), and **live lift outages** that correct TfL's static
-  step-free assumption.
-- the recommended route is further enhanced with **crime, noise, and air-quality data** to help users make informed trade-offs, orchestrated by DGX Spark / HP Nano AI Station's ability to run all the reasoning and data-fetching / processing in one place.
-- **On-device** multimodal inference (vLLM + NVFP4, ~32 GB VRAM, 128K context) —
-  no cloud round-trip for the core planner. 
-- **Agentic crowdsourcing hazard reporting** — one snapshot becomes a council-ready email through
-  five composable NemoClaw skills, streamed back to the UI over SSE, the VLM is provided by Nebius TokenFactory, simulating a cloud VLM operated by public sectors - it's of the exact same architecture and inferencing endpoint as on device.
+- **Re-routes per persona**, not re-ranks — different edge costs → different optimal path for blind / wheelchair / elderly / night-safety.
+- **Three-layer accessibility**: TfL step-free (transit), OSM street features (kerbs/tactile/steps), and **live lift outages** that correct TfL's static step-free assumption.
+- the recommended route is further enhanced with **Three more datasets**: **crime (London Police), noise (Defra), and air-quality (London Air Network) data** to help users make informed trade-offs, orchestrated by DGX Spark / HP Nano AI Station's ability to run all the reasoning and data-fetching / processing in one place.
+- **On-device** multimodal inference (vLLM + NVFP4, ~32 GB VRAM, 128K context) — no cloud round-trip for the core planner. 
+- **Agentic crowdsourcing hazard reporting** — one snapshot becomes a council-ready email through five composable NemoClaw skills, streamed back to the UI over SSE, the VLM is provided by Nebius TokenFactory, simulating a cloud VLM operated by public sectors - it's of the exact same architecture and inferencing endpoint as on device.
 
 ## Demo Video URL *
 *(paste YouTube/Loom link before submission — ≤ 5 minutes)*
@@ -98,7 +87,7 @@ NVIDIA AI ecosystem tools, libraries, frameworks, SDKs, recipes:
     `resolve-location`, `search-authority`, `prepare-content`, `prepare-email`.
 - **Nemotron-3-Nano-Omni-30B (NVFP4)** — quantised multimodal Nemotron build,
   ~15 GB VRAM footprint on GB10.
-- **vLLM** (`vllm/vllm-openai:v0.20.0-aarch64-cu130`) — OpenAI-compatible serving
+- **vLLM Docker** (`vllm/vllm-openai:v0.20.0-aarch64-cu130`) — OpenAI-compatible serving
   on GB10, NVFP4 quant, 128K context.
 - **NVIDIA cuGraph** (with **RMM** unified-memory pool on GB10) — optional GPU
   routing backend for the walkable graph; CPU Dijkstra fallback. Benchmarked
@@ -106,13 +95,14 @@ NVIDIA AI ecosystem tools, libraries, frameworks, SDKs, recipes:
 - **NVIDIA NIM-compatible / OpenAI-compatible inference path** — same client
   code targets on-device vLLM, Nebius cloud, or a NemoClaw backend by switching
   `LLM_PROVIDER`.
-- **NVIDIA Container Runtime** + **Docker** on Spark (`vllm-net` bridge for
+- **NVIDIA GPU Accelerated Container Runtime** + **Docker** on Spark (`vllm-net` bridge for
   vLLM ↔ Caddy ↔ Open WebUI).
-- **Open WebUI** — quick model-inspection UI on `vllm-net`.
+- **Open WebUI** — quick model-inspection UI on `vllm-net` for Nemotron3 Nano 30B Omini model vLLM endpoint evaluation.
 
-Non-NVIDIA supporting tools (for completeness): ElevenLabs ElevenAgents SDK, Next.js 16 + Bun, TypeScript,
-Leaflet, Caddy, Cloudflare Tunnel, Transport for London Unified API, OSM /
-Nominatim, DuckDuckGo, Resend.
+- **ElevenLabs ElevenAgents SDK**, **Next.js 16 w Bun**, **TypeScript / Tailwind CSS 4**, **Leaflet + OpenStreetMap**, **Caddy Reverse Proxy - Let's Encrypt**, **Cloudflare Tunnel**,
+- **Transport for London Unified API**
+- **OSM / OpenStreet Map GeoJSON API**
+- **Nominatim, DuckDuckGo, Resend**
 
 ## Nemotron Bounty eligibility
 ☑ **Check** — Nemotron-3-Nano-Omni-30B (NVFP4) is the primary on-device
