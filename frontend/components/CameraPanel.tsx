@@ -10,8 +10,9 @@ import {
 } from "react";
 import { HazardReportModal } from "@/components/HazardReportModal";
 import { useCameraStream } from "@/hooks/useCameraStream";
-import { useVoiceSpeak } from "@/hooks/useVoiceSpeak";
+import { useSpatialAlert } from "@/hooks/useSpatialAlert";
 import type { HazardStreamResult } from "@/lib/camera/hazard-stream";
+import type { SoundPosition } from "@/lib/navigation/spatial-audio";
 import { hazardCarefulVoiceText } from "@/lib/camera/surroundings";
 import type { GpsLocation } from "@/lib/mobility/sensors";
 
@@ -73,7 +74,11 @@ function CameraPanelInner(
   ref: Ref<CameraPanelHandle>
 ) {
   const lastCarefulVoiceAtRef = useRef(0);
-  const { speak, unlockAudio } = useVoiceSpeak();
+  // Route YOLO hazard alerts through spatial audio: bbox center → HRTF position.
+  // Falls back to center (x=0.5) if no bbox is available. TTS bytes still come
+  // from /api/voice/speak (ElevenLabs), but routed through Web Audio HRTF so a
+  // hazard on the right side of the frame is heard from the right ear.
+  const { alert: spatialAlert } = useSpatialAlert();
 
   const handleHazardResult = useCallback(
     (result: HazardStreamResult) => {
@@ -82,9 +87,18 @@ function CameraPanelInner(
       const now = Date.now();
       if (now - lastCarefulVoiceAtRef.current < CAREFUL_VOICE_COOLDOWN_MS) return;
       lastCarefulVoiceAtRef.current = now;
-      void unlockAudio().then(() => speak(voiceText));
+
+      const bbox = result.closestHazard?.bbox;
+      const position: SoundPosition = bbox
+        ? {
+            x: (bbox.x1 + bbox.x2) / 2,
+            y: (bbox.y1 + bbox.y2) / 2,
+          }
+        : { x: 0.5, y: 0.5 };
+
+      void spatialAlert(voiceText, position);
     },
-    [speak, unlockAudio]
+    [spatialAlert]
   );
 
   const {
