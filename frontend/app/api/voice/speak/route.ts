@@ -16,7 +16,7 @@ export async function POST(request: Request) {
   }
 
   const voiceId =
-    process.env.ELEVENLABS_VOICE_ID?.trim() || "JBFqnCBsd6RMkjVDRZzb";
+    process.env.ELEVENLABS_VOICE_ID?.trim() || "Xb7hH8MSUJpSbSDYk0k2"; // Alice — British female
 
   const res = await fetch(
     `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`,
