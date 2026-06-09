@@ -1,39 +1,24 @@
 #!/usr/bin/env bash
-# scripts/gpu1/cloudflared-service.sh — install cloudflared as a systemd service on gpu1
-# Uses the named tunnel config at scripts/cloudflare/cloudflared.yml.
-# Run AFTER:
-#   1. install-cloudflared.sh
-#   2. ../cloudflare/setup-named-tunnel.sh   (creates tunnel, writes cloudflared.yml)
+# scripts/gpu1/cloudflared-service.sh — enable the cloudflared systemd service on gpu1
+#
+# Assumes setup-cf-tunnel.sh has already populated /etc/cloudflared/ with
+# config.yml + <id>.json. This script just installs / refreshes the systemd
+# unit and starts it.
 #
 # Usage: ./cloudflared-service.sh
-set -e
+set -euo pipefail
 
-CONFIG_FILE="$(realpath "$(dirname "$0")/../cloudflare/cloudflared.yml")"
-
-if [ ! -f "$CONFIG_FILE" ]; then
-  echo "Error: $CONFIG_FILE not found. Run scripts/cloudflare/setup-named-tunnel.sh first."
+if [ ! -f /etc/cloudflared/config.yml ]; then
+  echo "ERROR: /etc/cloudflared/config.yml not found. Run ./setup-cf-tunnel.sh first." >&2
   exit 1
 fi
 
-# cloudflared expects /etc/cloudflared/config.yml when run as a service.
-sudo mkdir -p /etc/cloudflared
-sudo cp "$CONFIG_FILE" /etc/cloudflared/config.yml
-
-# Copy credentials file referenced in the yml (~/.cloudflared/<id>.json) into /etc/cloudflared
-CREDS_FILE=$(awk '/^credentials-file:/{print $2}' "$CONFIG_FILE")
-if [ -n "$CREDS_FILE" ] && [ -f "$CREDS_FILE" ]; then
-  sudo cp "$CREDS_FILE" /etc/cloudflared/
-  CREDS_BASENAME=$(basename "$CREDS_FILE")
-  # rewrite credentials-file path in /etc/cloudflared/config.yml to the service-readable location
-  sudo sed -i "s|^credentials-file:.*|credentials-file: /etc/cloudflared/${CREDS_BASENAME}|" /etc/cloudflared/config.yml
-else
-  echo "Warning: credentials file not found at $CREDS_FILE"
+if ! command -v cloudflared >/dev/null 2>&1; then
+  echo "ERROR: cloudflared not installed. Run ./install-cloudflared.sh." >&2
+  exit 1
 fi
 
-sudo chmod 644 /etc/cloudflared/config.yml
-sudo chmod 600 /etc/cloudflared/*.json 2>/dev/null || true
-
-# Install service (idempotent — uninstall first to refresh config)
+# Install / refresh service (idempotent — uninstall first so config refreshes)
 sudo cloudflared service uninstall 2>/dev/null || true
 sudo cloudflared service install
 
@@ -42,4 +27,4 @@ sudo systemctl enable cloudflared
 sudo systemctl restart cloudflared
 
 sleep 2
-sudo systemctl --no-pager status cloudflared | head -20
+sudo systemctl --no-pager status cloudflared | head -15
