@@ -37,10 +37,12 @@ stack back automatically.
 | `nemotron-nano-omni-30b-bf16.sh`  | Launch BF16 reference (~60 GB) on `vllm-nemotron-bf16:18002`. For quality comparisons. |
 | `open-webui-config.sh`            | Re-deploy `open-webui` on `vllm-net` pointing at our Nemotron container. |
 | `Caddyfile` / `caddy.sh`          | Reverse proxy — `/v1` → vLLM, `/oui` → OUI, `/mobility` → backend, `/` → frontend. |
-| `install-cloudflared.sh`          | Install `cloudflared` apt package (one-time, sudo). |
-| `cloudflared-service.sh`          | Run `cloudflared` as a **systemd service** (primary connector). |
-| `cloudflared-docker.sh`           | Run `cloudflared` as a **Docker container** (assurance / HA second connector). |
 | `run-frontend.sh`                 | Start Next.js (`bun dev`) in a tmux session, listening on `0.0.0.0:3000`. |
+
+**Cloudflare Tunnel** infrastructure lives **outside this repo** at
+`/home/charles/_charles/_github/charles-cai/homelabs/ubuntu/gpu1/cloudflared/`
+on gpu1 (separate `charles-cai/homelabs` git repo). Both connectors —
+systemd service + Docker compose — are managed there. See its `README.md`.
 
 ---
 
