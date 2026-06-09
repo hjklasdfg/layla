@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
 # scripts/gpu1/nemotron-nano-omni-30b-bf16.sh
-# nvidia/Nemotron-3-Nano-Omni-30B-A3B-Reasoning-BF16 on gpu1 (RTX PRO 6000 Blackwell, x86_64)
-# ~60 GB weights (BF16); MoE 3B active params; multimodal; 128K ctx
-# Heavier than NVFP4 but full-precision reference quality. RTX PRO 6000 (97 GB) fits it.
+# nvidia/Nemotron-3-Nano-Omni-30B-A3B-Reasoning-BF16 on gpu1 (~60 GB weights).
+# Reference quality (no quantization). RTX PRO 6000 (97 GB) fits it comfortably.
+#
+# Flags adapted from the official Nemotron-3-Nano recipe + BF16 model card:
+#   https://docs.vllm.ai/projects/recipes/en/latest/NVIDIA/Nemotron-3-Nano-30B-A3B.html
+#
 # Usage: ./nemotron-nano-omni-30b-bf16.sh [container] [port] [thinking=0|1]
 set -e
 
@@ -34,18 +37,22 @@ docker run -d --gpus all --ipc=host \
   -p "${PORT}:${PORT}" \
   "$IMAGE" \
     nvidia/Nemotron-3-Nano-Omni-30B-A3B-Reasoning-BF16 \
+    --host 0.0.0.0 \
+    --port "$PORT" \
     --tensor-parallel-size 1 \
     --dtype bfloat16 \
     --max-model-len 131072 \
     --max-num-seqs 128 \
-    --reasoning-parser deepseek_r1 \
-    --chat-template-kwargs "$THINKING_KWARGS" \
     --trust-remote-code \
-    --gpu-memory-utilization 0.85 \
+    --kv-cache-dtype auto \
     --enable-auto-tool-choice \
-    --tool-call-parser hermes \
+    --tool-call-parser qwen3_coder \
+    --default-chat-template-kwargs "$THINKING_KWARGS" \
+    --gpu-memory-utilization 0.85 \
     --limit-mm-per-prompt '{"image": 1, "video": 1}' \
-    --port "$PORT"
+    --video-pruning-rate 0.5 \
+    --allowed-local-media-path / \
+    --media-io-kwargs '{"video": {"fps": 2, "num_frames": 256}}'
 
 echo ""
 echo "Nemotron BF16 starting → http://localhost:${PORT}/v1"

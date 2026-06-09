@@ -1,8 +1,15 @@
 #!/usr/bin/env bash
 # scripts/gpu1/nemotron-nano-omni-30b-nvfp4.sh
-# nvidia/Nemotron-3-Nano-Omni-30B-A3B-Reasoning-NVFP4 on gpu1 (RTX PRO 6000 Blackwell, x86_64)
-# ~15 GB weights (NVFP4); MoE 3B active params; multimodal; 128K ctx
-# Requires: Blackwell SM_120 + driver R580+ + CUDA 13.x. vLLM Marlin NVFP4 backend.
+# nvidia/Nemotron-3-Nano-Omni-30B-A3B-Reasoning-NVFP4 on gpu1
+#   - RTX PRO 6000 Blackwell · x86_64 · CUDA 13 · vLLM v0.20.0+
+#
+# Flags follow the official vLLM recipe:
+#   https://docs.vllm.ai/projects/recipes/en/latest/NVIDIA/Nemotron-3-Nano-30B-A3B.html
+#   https://huggingface.co/nvidia/Nemotron-3-Nano-Omni-30B-A3B-Reasoning-NVFP4
+# RTX PRO is **not FlashInfer-compatible** for NVFP4 MoE → use Marlin backend.
+# (The recipe's "triton" recommendation is for the non-NVFP4 variant; NVFP4 MoE
+#  only accepts cutlass / flashinfer_* / marlin / emulation.)
+#
 # Usage: ./nemotron-nano-omni-30b-nvfp4.sh [container] [port] [thinking=0|1]
 set -e
 
@@ -27,8 +34,6 @@ docker rm -f "$CONTAINER" 2>/dev/null || true
 docker run -d --gpus all --ipc=host \
   --restart unless-stopped \
   -e NVIDIA_DRIVER_CAPABILITIES=compute,utility \
-  -e VLLM_NVFP4_GEMM_BACKEND=marlin \
-  -e VLLM_USE_FLASHINFER_MOE_FP4=0 \
   --name "$CONTAINER" \
   --network vllm-net \
   -v "${HF_CACHE}:/root/.cache/huggingface" \
@@ -36,18 +41,22 @@ docker run -d --gpus all --ipc=host \
   -p "${PORT}:${PORT}" \
   "$IMAGE" \
     nvidia/Nemotron-3-Nano-Omni-30B-A3B-Reasoning-NVFP4 \
+    --host 0.0.0.0 \
+    --port "$PORT" \
     --tensor-parallel-size 1 \
     --max-model-len 131072 \
-    --max-num-seqs 256 \
-    --reasoning-parser deepseek_r1 \
-    --chat-template-kwargs "$THINKING_KWARGS" \
+    --max-num-seqs 384 \
     --trust-remote-code \
+    --kv-cache-dtype fp8 \
     --moe-backend marlin \
-    --gpu-memory-utilization 0.50 \
     --enable-auto-tool-choice \
-    --tool-call-parser hermes \
+    --tool-call-parser qwen3_coder \
+    --default-chat-template-kwargs "$THINKING_KWARGS" \
+    --gpu-memory-utilization 0.55 \
     --limit-mm-per-prompt '{"image": 1, "video": 1}' \
-    --port "$PORT"
+    --video-pruning-rate 0.5 \
+    --allowed-local-media-path / \
+    --media-io-kwargs '{"video": {"fps": 2, "num_frames": 256}}'
 
 echo ""
 echo "Nemotron NVFP4 starting → http://localhost:${PORT}/v1"
