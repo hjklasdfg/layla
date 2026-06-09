@@ -206,7 +206,29 @@ BACKEND_API_URL=                    # blanked on purpose — frontend uses in-pr
 CAMERA_HAZARD_FAKE_LOOP=false
 CAMERA_HAZARD_API_URL=http://localhost:8001
 LAYLA_NEMOCLAW_AUTO_START=false     # NemoClaw hazard agent disabled (OOM history)
+NEBUISAI_API_KEY=…                  # cloud fallback — hazard VLM + mobility plan
+# NEBUISAI_BASE_URL=https://api.tokenfactory.nebius.com/v1
+# NEBUISAI_MODEL=Qwen/Qwen3-32B
+# NEBUISAI_VISION_MODEL=Qwen/Qwen2.5-VL-72B-Instruct
 ```
+
+> **Note**: the code accepts both `NEBUISAI_API_KEY` (the spelling in `.env.local.example`) and `NEBIUS_API_KEY` — pick one.
+
+### Loading or rotating a key
+
+`.env.local` is read **once at Next.js startup**. After any edit, restart the frontend:
+
+```bash
+# From your Mac (replace YOUR_KEY) — example for Nebius
+ssh gpu1 "sed -i 's|^NEBUISAI_API_KEY=.*|NEBUISAI_API_KEY=YOUR_KEY|' \
+  ~/_charles/_github/hjklasdfg/layla/frontend/.env.local && \
+  grep -E '^NEBUIS' ~/_charles/_github/hjklasdfg/layla/frontend/.env.local | sed 's/=.\+/=<set>/'"
+
+# Restart the frontend so it sees the new value
+ssh gpu1 "tmux kill-session -t frontend; bash ~/_charles/_github/hjklasdfg/layla/scripts/gpu1/run-frontend.sh"
+```
+
+Same pattern for `ELEVENLABS_API_KEY`, `GEMINI_API_KEY`, `TFL_APP_KEY`, etc. — edit then restart.
 
 `scripts/.env` (gitignored). Set by `setup-tunnel.sh` + manually:
 
