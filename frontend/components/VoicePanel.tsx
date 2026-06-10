@@ -412,59 +412,57 @@ const VoicePanelActive = forwardRef<
   const connectScribe = useCallback(async () => {
     if (unmountedRef.current) return false;
 
+    const log = (stage: string, extra?: unknown) => {
+      // Logs are visible in Safari Web Inspector — vital for iOS Safari mic debugging.
+      // eslint-disable-next-line no-console
+      console.log(`[scribe] ${stage}`, extra ?? "");
+    };
+
     setConnecting(true);
     setMicDenied(false);
     setScribeError(null);
-
-    // iOS Safari requires getUserMedia to be the first await in the user-gesture
-    // chain. Any prior await (unlockAudio, fetch) consumes the activation context
-    // and the subsequent SDK-internal getUserMedia hangs or is silently rejected.
-    // Pre-acquire here so the permission prompt fires while the gesture is live;
-    // the ElevenLabs SDK acquires its own stream inside scribe.connect().
-    if (typeof navigator !== "undefined" && navigator.mediaDevices?.getUserMedia) {
-      let primeStream: MediaStream | null = null;
-      try {
-        primeStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : "";
-        setConnecting(false);
-        if (
-          msg.toLowerCase().includes("not allowed") ||
-          msg.toLowerCase().includes("permission") ||
-          msg.toLowerCase().includes("denied")
-        ) {
-          setMicDenied(true);
-        } else {
-          setScribeError(msg || "Microphone access failed");
-        }
-        return false;
-      } finally {
-        primeStream?.getTracks().forEach((t) => t.stop());
-      }
-    }
+    log("connect-start");
 
     if (!userIdRef.current) {
       userIdRef.current = getVoiceUserId();
     }
-
     loadVoiceMemory(userIdRef.current);
 
+    // Run all non-mic awaits FIRST so the SDK's internal getUserMedia is the
+    // first mic-touching call after the user gesture — iOS 17+ Safari hangs
+    // when getUserMedia is invoked twice across a span of awaits (the
+    // previous code pre-acquired the stream, then ran fetch + unlockAudio,
+    // then let the SDK acquire again, which silently stalled on iPhone).
+    let token: string;
     try {
       if (scribe.isConnected) {
+        log("disconnect-prior");
         await disconnectScribe();
       }
 
+      log("unlock-audio");
       await unlockAudio();
 
+      log("fetch-token");
       const tokenRes = await fetch("/api/voice/scribe-token");
       if (!tokenRes.ok) {
         const payload = (await tokenRes.json()) as { error?: string };
         throw new Error(payload.error ?? "Could not get Scribe token");
       }
+      const tokenJson = (await tokenRes.json()) as { token: string };
+      token = tokenJson.token;
+      log("got-token", { len: token.length });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to start voice";
+      log("pre-connect-error", message);
+      setScribeError(message);
+      setConnecting(false);
+      return false;
+    }
 
-      const { token } = (await tokenRes.json()) as { token: string };
-
-      await scribe.connect({
+    try {
+      log("scribe.connect-begin");
+      const connectPromise = scribe.connect({
         token,
         microphone: {
           echoCancellation: true,
@@ -473,10 +471,31 @@ const VoicePanelActive = forwardRef<
         },
       });
 
+      // Time-box the SDK so failures surface as a clear error instead of an
+      // infinite "Connecting mic…" spinner. Tuned for slow mobile networks.
+      const timeoutMs = 12_000;
+      const timeout = new Promise<never>((_, reject) => {
+        setTimeout(
+          () =>
+            reject(
+              new Error(
+                "Scribe connect timed out (12s). Check Safari console for [scribe] logs."
+              )
+            ),
+          timeoutMs
+        );
+      });
+      await Promise.race([connectPromise, timeout]);
+      log("scribe.connect-ok");
       return true;
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to start voice";
-      if (message.toLowerCase().includes("permission")) {
+      log("scribe.connect-error", message);
+      if (
+        message.toLowerCase().includes("not allowed") ||
+        message.toLowerCase().includes("permission denied") ||
+        message.toLowerCase().includes("permission")
+      ) {
         setMicDenied(true);
       } else {
         setScribeError(message);
