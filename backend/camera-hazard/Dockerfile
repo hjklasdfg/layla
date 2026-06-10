@@ -1,5 +1,13 @@
 FROM python:3.11-slim
 
+# System libraries required by OpenCV (pulled in transitively by ultralytics).
+# python:3.11-slim is stripped of these by design, so detection silently fails
+# with "libxcb.so.1: cannot open shared object file" on the first inference.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends \
+      libxcb1 libgl1 libglib2.0-0 libxext6 libsm6 libxrender1 \
+ && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 
 COPY requirements.txt ./

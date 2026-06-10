@@ -26,6 +26,10 @@ export interface CameraPanelHandle {
 interface CameraPanelProps {
   gps?: GpsLocation | null;
   locationDescription?: string;
+  /** Called when the user is about to fire a hazard report — triggers the
+   *  geolocation permission prompt at the exact moment GPS is needed,
+   *  instead of at page load. */
+  onRequestLocation?: () => void;
 }
 
 const CAREFUL_VOICE_COOLDOWN_MS = 15_000;
@@ -70,7 +74,7 @@ function HazardOverlay({ result }: { result: HazardStreamResult | null }) {
 }
 
 function CameraPanelInner(
-  { gps, locationDescription }: CameraPanelProps,
+  { gps, locationDescription, onRequestLocation }: CameraPanelProps,
   ref: Ref<CameraPanelHandle>
 ) {
   const lastCarefulVoiceAtRef = useRef(0);
@@ -142,8 +146,9 @@ function CameraPanelInner(
 
   const handleOpenHazardReport = useCallback(() => {
     setError(null);
+    onRequestLocation?.();
     setHazardModalOpen(true);
-  }, [setError]);
+  }, [setError, onRequestLocation]);
 
   const handleHazardStart = useCallback(async () => {
     const { base64, mimeType } = await capturePhoto();

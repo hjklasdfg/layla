@@ -1,7 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { CameraPanel, type CameraPanelHandle } from "@/components/CameraPanel";
 import { isCameraOffCommand, isCameraOnCommand } from "@/lib/camera/voice-commands";
 import { ChangeTimeline } from "@/components/ChangeTimeline";
@@ -155,7 +155,13 @@ export default function Home() {
   const [crimeLayerVisible, setCrimeLayerVisible] = useState(false);
   const [crimeLoading, setCrimeLoading] = useState(false);
   const [crimeError, setCrimeError] = useState<string | null>(null);
-  const { location: gpsLocation } = useGeolocation(true);
+  // Gate geolocation behind explicit user actions that actually need it
+  // (mobility "use current location", hazard report, route-from-here).
+  // iOS Safari shows two stacked prompts if location is requested at page
+  // load AND the user then taps the mic, which can stall mic permission.
+  const [locationEnabled, setLocationEnabled] = useState(false);
+  const enableLocation = useCallback(() => setLocationEnabled(true), []);
+  const { location: gpsLocation } = useGeolocation(locationEnabled);
   const nav = useNavigation();
   const { speak: speakAnswer } = useVoiceSpeak();
   const [askQuestion, setAskQuestion] = useState("");
@@ -550,6 +556,7 @@ export default function Home() {
               ref={cameraRef}
               gps={gpsLocation}
               locationDescription={journeyLabel}
+              onRequestLocation={enableLocation}
             />
 
             <div className="rounded-xl border border-slate-700/60 bg-slate-900/50 p-5 backdrop-blur">
@@ -563,17 +570,23 @@ export default function Home() {
                     <button
                       type="button"
                       onClick={() => {
+                        if (!locationEnabled) {
+                          enableLocation();
+                          return;
+                        }
                         if (gpsLocation) {
                           setStart(
                             `${gpsLocation.latitude.toFixed(6)},${gpsLocation.longitude.toFixed(6)}`
                           );
                         }
                       }}
-                      disabled={!gpsLocation}
+                      disabled={locationEnabled && !gpsLocation}
                       title={
-                        gpsLocation
-                          ? "Use your current GPS location"
-                          : "Location unavailable (needs GPS + HTTPS)"
+                        !locationEnabled
+                          ? "Tap to enable GPS"
+                          : gpsLocation
+                            ? "Use your current GPS location"
+                            : "Waiting for GPS…"
                       }
                       className="text-[11px] font-medium text-cyan-400 transition hover:text-cyan-300 disabled:cursor-not-allowed disabled:text-slate-600"
                     >
